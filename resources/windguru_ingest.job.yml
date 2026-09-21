@@ -1,0 +1,42 @@
+# Datenerfassung: zieht 24/7 alle 30 Minuten die Windguru-Prognose + Live-Stationen (+ die
+# Wassertemperatur von Rijkswaterstaat) und
+# schreibt sie in dieselbe Lakebase-Postgres wie die App. Läuft bewusst UNABHÄNGIG vom
+# App-Fenster (6–23 Uhr), damit auch nachts durchgehend Historie für die Trends entsteht.
+#
+# Task ist ein serverless Notebook (scripts/ingest_job.py, installiert psycopg2 per %pip;
+# keine job_clusters, Serverless muss im Workspace aktiv sein). Der eingebaute App-Poller
+# ist dafür aus (POLL_ENABLED=0 in app.yaml) — sonst würde tagsüber doppelt geschrieben.
+#
+# Berechtigung: Der Job muss als eine Identität laufen, die in Lakebase in das Schema
+# schreiben darf (dieselben Rechte wie der App-Service-Principal). Standard: die deployende
+# Person. Falls die keine Schreibrechte auf das SP-eigene Schema hat, `run_as` auf den
+# App-Service-Principal setzen (Client-ID via `databricks apps get ${var.app_name}`).
+
+resources:
+  jobs:
+    windguru_ingest:
+      name: "${var.app_name} — Datenerfassung (alle 30 min, 24/7)"
+      schedule:
+        # Quartz-Cron: zur Minute 0 und 30 jeder Stunde, rund um die Uhr.
+        quartz_cron_expression: "0 0,30 * * * ?"
+        timezone_id: UTC
+        pause_status: UNPAUSED
+      # Serverless-Environment mit vorinstalliertem Postgres-Treiber.
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+            dependencies:
+              - pg8000
+
+      tasks:
+        - task_key: ingest
+          environment_key: default
+          notebook_task:
+            notebook_path: ../scripts/ingest_job.py
+            base_parameters:
+              LAKEBASE_SCHEMA: ${var.lakebase_schema}
+              LAKEBASE_PROJECT: ${var.lakebase_project}
+              LAKEBASE_BRANCH: ${var.lakebase_branch}
+              # 0 = unbegrenzt aufbewahren (Saisonalität); ~2 GB/Jahr.
+              SNAPSHOT_RETENTION_DAYS: "0"

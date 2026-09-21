@@ -1,0 +1,24 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# databricks
+/.databricks/
+
+# env
+.env
+.env.*
+!.env.example
+
+# misc
+*.log
+*.bak
+.DS_Store
+next-env.d.ts
+tsconfig.tsbuildinfo

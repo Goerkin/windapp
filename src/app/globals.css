@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Windguru Dashboard — Dark Cockpit / Marine
+   ============================================================ */
+@theme {
+  --color-bg: #080c17;
+  --color-bg-2: #0b1120;
+  --color-panel: #121a2e;
+  --color-panel-2: #16203a;
+  --color-border: #1e2740;
+  --color-border-soft: #17203a;
+  --color-ink: #e8edf6;
+  --color-body: #c3cbdc;
+  --color-muted: #8a93a8;
+  --color-faint: #5b647c;
+
+  --color-accent: #22d3ee;
+  --color-accent-dim: #0e7490;
+  --color-amber: #f59e0b;
+
+  /* Wind-Skala (Knoten) */
+  --wg-grey: #64748b;
+  --wg-blue: #3b82f6;
+  --wg-teal: #22d3ee;
+  --wg-green: #22c55e;
+  --wg-amber: #f59e0b;
+  --wg-orange: #f97316;
+  --wg-red: #ef4444;
+
+  --radius-card: 16px;
+  --radius-chip: 8px;
+
+  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-grotesk), "Space Grotesk", var(--font-inter), sans-serif;
+  --font-mono: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, #0f1b34 0%, transparent 55%),
+    radial-gradient(1000px 500px at 100% 0%, #10233a 0%, transparent 50%),
+    var(--color-bg);
+  color: var(--color-body);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+@layer components {
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+    font-feature-settings: "tnum" 1;
+  }
+
+  .panel {
+    background: linear-gradient(180deg, var(--color-panel-2) 0%, var(--color-panel) 100%);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 40px -30px rgba(0, 0, 0, 0.8);
+  }
+  .panel-flat {
+    background: var(--color-panel);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid var(--color-border);
+    color: var(--color-body);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .tab-btn {
+    padding: 0.4rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-muted);
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+  }
+  .tab-btn:hover {
+    color: var(--color-ink);
+  }
+  .tab-btn[data-active="true"] {
+    color: var(--color-bg);
+    background: var(--color-accent);
+    box-shadow: 0 0 20px -6px var(--color-accent);
+  }
+
+  .seg {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    border-radius: 999px;
+    background: var(--color-bg-2);
+    border: 1px solid var(--color-border);
+  }
+  .seg > button {
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-muted);
+  }
+  .seg > button[data-active="true"] {
+    color: var(--color-ink);
+    background: var(--color-panel-2);
+    border: 1px solid var(--color-border);
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+    animation: pulse 2s infinite;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+/* Recharts: klar lesbare Achsen im Dark-Theme */
+.recharts-cartesian-axis-tick text {
+  fill: #eaeef7 !important;
+  font-size: 12px;
+  font-weight: 600;
+}
+.recharts-label,
+.recharts-reference-line text {
+  fill: #eaeef7 !important;
+  font-weight: 600;
+}
+.recharts-default-tooltip {
+  background: rgba(11, 17, 32, 0.95) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 10px !important;
+}
+
+::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+}

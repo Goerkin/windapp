@@ -1,0 +1,147 @@
+// Windguru Wind-Dashboard — Datenmodell.
+//
+// Alles hängt am Spot. Ein Snapshot = ein Datenabruf aller Modelle für einen Spot zu einem
+// Zeitpunkt. Die eigentlichen Zeitreihen liegen pro (Snapshot, Modell) als JSON in
+// ModelSeries — kompakt (wenige Zeilen je Poll) und aus dem Modell-Set wird im Server der
+// aggregierte Konsens sowie die Trend-Historie berechnet.
+
+generator client {
+  provider   = "prisma-client-js"
+  // engineType "client" = Rust-freier Client OHNE Query-Engine-Binary (nutzt den WASM-
+  // Query-Compiler über den pg-Treiber-Adapter). Nötig für das 10-MB-pro-Datei-Limit der
+  // Databricks Apps. Siehe prisma.ts.
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Ein Spot (Windguru id_spot). Fix eingetragen per Seed (Brouwersdam 97, Mirns 3642).
+model Spot {
+  id        Int          @id // = Windguru id_spot
+  slug      String       @unique
+  name      String
+  region    String?
+  lat       Float?
+  lon       Float?
+  sortOrder Int          @default(0)
+  snapshots Snapshot[]
+  stationObs StationObs[]
+  updatedAt DateTime     @updatedAt
+}
+
+// Live-Messung einer Windguru-Wetterstation, die dem Spot zugeordnet ist
+// (Brouwersdam → Natural High 521, Mirns → Hindeloopen 16217). Wird im 30-min-Poll
+// gezogen (q=station_data_current) und gegen die Prognose gelegt. Werte in Knoten / °C.
+// Eindeutig je (Spot, Messzeitpunkt) — derselbe Messwert wird nicht doppelt gespeichert.
+model StationObs {
+  id        String   @id @default(cuid())
+  spotId    Int
+  spot      Spot     @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  stationId Int      // id der Quelle (Windguru id_station bzw. soarcast location_id)
+  obsTime   DateTime // Zeitpunkt der Messung
+  fetchedAt DateTime @default(now())
+
+  windAvg   Float? // kn
+  windMax   Float? // kn (Böe)
+  windMin   Float? // kn
+  windDir   Float? // Grad
+  temp      Float? // °C
+
+  // Ein Spot kann mehrere Messstationen haben (z. B. Mirns: Hindeloopen + Mirns NKV) —
+  // je Station und Messzeitpunkt genau eine Zeile.
+  @@unique([spotId, stationId, obsTime])
+  @@index([spotId, obsTime])
+}
+
+// Ein Datenabruf für einen Spot. Trägt die zum Abrufzeitpunkt gültigen Spot-Metadaten und
+// die Blend-Definition von Windguru (Modellgewichte etc.) als JSON.
+model Snapshot {
+  id        String        @id @default(cuid())
+  spotId    Int
+  spot      Spot          @relation(fields: [spotId], references: [id], onDelete: Cascade)
+  fetchedAt DateTime      @default(now())
+  ok        Boolean       @default(true)
+
+  // Spot-Meta zum Abrufzeitpunkt (aus dem forecast_spot-Header extrahiert).
+  sunrise   String?
+  sunset    String?
+  waterTemp Float?
+  timezone  String?
+
+  // Windguru-Blend-Konfiguration (model_koef, mix_range, Sensitivitäten) als JSON.
+  blend     Json?
+
+  models    ModelSeries[]
+
+  @@index([spotId, fetchedAt])
+}
+
+// Zeitreihe genau eines Wettermodells innerhalb eines Snapshots.
+model ModelSeries {
+  id            String   @id @default(cuid())
+  snapshotId    String
+  snapshot      Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  idModel       Int
+  modelName     String
+  modelLongname String?
+  resolution    Float? // km — kleiner = höher aufgelöst = relevanter für lokale Küste
+  koef          Float    @default(1) // Gewicht im Windguru-Blend
+  initStamp     Int // Unix-Sekunden des Modell-Laufs (init)
+
+  // Zeitreihe als JSON:
+  // { times:[unix], WINDSPD:[kn], GUST:[kn], WINDDIR:[deg], TMP:[°C], TMPE:[°C],
+  //   TCDC/HCDC/MCDC/LCDC:[%], APCP1:[mm], RH:[%], SLP:[hPa] }
+  series        Json
+
+  @@index([snapshotId])
+  @@index([idModel])
+}
+
+// Materialisierte Modell-Güte je Spot × Modell: recency-gewichteter Vergleich der
+// Modellvorhersage gegen die tatsächliche Messung (Natural High / Mirns NKV). Wird im
+// Hintergrund berechnet (App-Start, nach jedem Abruf, Poller-Intervall) — NICHT im
+// Request-Pfad. Der eigene Konsens gewichtet die Modelle nach `score` (siehe skill.ts).
+model ModelSkill {
+  id         String   @id @default(cuid())
+  spotId     Int
+  idModel    Int
+  label      String
+  resolution Float?
+  mae        Float? // recency-gewichteter mittlerer abs. Fehler (kn)
+  bias       Float? // recency-gewichteter Bias, Prognose − Messung (kn)
+  samples    Float    @default(0) // effektive (recency-gewichtete) Stichprobenzahl
+  score      Float    @default(0) // Konsens-Gewicht 1/σ² (Vorlauf 0–24 h, gewählte Variante) — Anzeige
+  updatedAt  DateTime @updatedAt
+
+  @@unique([spotId, idModel])
+  @@index([spotId])
+}
+
+// Materialisierte Ergebnisse je Spot, im Hintergrund erneuert (skill.ts):
+//  - verification: rollierende, ehrliche Verifikation (Varianten, Brier, Nowcast-Nachlauf)
+//  - params: gelerntes Nachkorrektur-Modell (calib.ts SpotParams) — speist den Konsens
+model SpotStat {
+  spotId       Int      @id
+  verification Json? // serialisiertes Verification-Objekt
+  params       Json? // SpotParams: Variante, Fits je Modell × Vorlauf, sigmaScale, nowcastGain
+  updatedAt    DateTime @updatedAt
+}
+
+// Gemessene Wassertemperatur (Rijkswaterstaat, DDAPI20) je Messstelle. Wird von der App
+// alle 6 h abgerufen (neuester Wert je Stelle; mehrere Sensoren gemittelt). Speist die
+// Anzeige und den Schichtungs-Term (Wasser − Luft) der Nachkorrektur.
+model WaterTemp {
+  id        String   @id @default(cuid())
+  spotId    Int
+  code      String // Rijkswaterstaat-Locatiecode, z. B. "friesekust.ijsselmeer"
+  obsTime   DateTime
+  value     Float // °C
+  fetchedAt DateTime @default(now())
+
+  @@unique([code, obsTime])
+  @@index([spotId, obsTime])
+}

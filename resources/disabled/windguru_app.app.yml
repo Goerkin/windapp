@@ -1,0 +1,32 @@
+# Die Next.js/Node-App als Databricks App.
+#
+# Zugriff: namentlich aufgezählte Personen, sonst niemand. Die App liest/schreibt die Daten
+# als ihr eigener Service Principal. CAN_USE = öffnen und benutzen. CAN_MANAGE = zusätzlich
+# Rechte/Deployments.
+
+resources:
+  apps:
+    windguru:
+      name: ${var.app_name}
+      description: >-
+        Windguru Wind-Dashboard — Brouwersdam & Mirns auf einen Blick: aktuelle Werte,
+        Modell-Konsens, Trend gegenüber früheren Datenständen.
+      source_code_path: ../
+
+      resources:
+        # Lakebase Postgres: die Datenbank, in die die App schreibt. CAN_CONNECT_AND_CREATE,
+        # damit der Service Principal sein eigenes Schema anlegen und besitzen darf. Die
+        # Plattform spritzt PGHOST/PGDATABASE/PGUSER/LAKEBASE_ENDPOINT beim Start ein —
+        # src/lib/lakebase.ts liest genau diese.
+        - name: postgres
+          postgres:
+            branch: projects/${var.lakebase_project}/branches/${var.lakebase_branch}
+            # Zwei Namen: der RESSOURCEN-Name der DB ist mit Bindestrich
+            # (`databricks-postgres`), der PG-Datenbankname mit Unterstrich
+            # (`databricks_postgres`, den spritzt die Plattform als PGDATABASE ein).
+            database: projects/${var.lakebase_project}/branches/${var.lakebase_branch}/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE
+
+      permissions:
+        - user_name: ${workspace.current_user.userName}
+          level: CAN_MANAGE

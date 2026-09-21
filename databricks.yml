@@ -1,0 +1,49 @@
+# Windguru Wind-Dashboard auf Databricks — Bundle-Definition.
+# Modelliert nach ai-readiness-app: bewusst workspace-neutral (keine URL/IDs/E-Mail hart
+# drin). Der Zielworkspace kommt aus dem CLI-Profil (`-p <profil>`) oder DATABRICKS_HOST.
+#
+# Deploy-Anleitung: DATABRICKS.md.
+
+bundle:
+  name: windguru
+
+include:
+  - resources/*.yml
+
+# Der vorgebaute Standalone-Server liegt unter .next/ (in .gitignore). DABs respektiert
+# .gitignore; `sync.include` zwingt genau diese Artefakte trotzdem ins Deployment. Ohne das
+# findet run-app.mjs `.next/standalone/server.js` nicht und die App crasht.
+sync:
+  include:
+    - .next/standalone/**
+    - .next/static/**
+
+variables:
+  app_name:
+    description: >-
+      Name der Databricks App. Harte Plattformgrenze: höchstens 26 Zeichen, nur
+      Kleinbuchstaben, Ziffern und Bindestriche — keine Unterstriche.
+    default: windguru
+
+  lakebase_project:
+    description: >-
+      Lakebase-Projekt (Postgres). Trägt Spots + Snapshot-Historie. Wird vor dem ersten
+      Deploy angelegt (siehe DATABRICKS.md) — Lakebase-Projekte sind keine DAB-Ressource.
+    default: windguru
+
+  lakebase_branch:
+    description: Branch innerhalb des Lakebase-Projekts.
+    default: production
+
+  lakebase_schema:
+    description: >-
+      Postgres-Schema, das die App besitzt und in dem alle Tabellen liegen. Muss zu
+      LAKEBASE_SCHEMA in app.yaml passen.
+    default: windguru
+
+targets:
+  dev:
+    default: true
+
+  prod:
+    mode: production

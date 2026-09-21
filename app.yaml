@@ -1,0 +1,38 @@
+# Laufzeitkonfiguration der Databricks App. Wird von der Apps-Runtime direkt gelesen;
+# Ressourcen und Berechtigungen stehen daneben in resources/windguru_app.app.yml.
+#
+# Der Umweg über run-app.mjs ist nötig: die Plattform führt den Befehl OHNE Shell aus,
+# deshalb kann der Port nicht per ${DATABRICKS_APP_PORT} in die Argumentliste. run-app.mjs
+# liest die Variable selbst und bindet an 0.0.0.0 (localhost => 502).
+
+command:
+  - node
+  - run-app.mjs
+
+env:
+  # Sagt der App, dass sie als Databricks App läuft (DB über Lakebase).
+  - name: WIND_RUNTIME
+    value: "databricks-app"
+  - name: WIND_DB
+    value: "lakebase"
+  - name: NODE_ENV
+    value: "production"
+
+  # Eingebauter Poller AUS: die App ist UI-only (läuft nur 6–23 Uhr, Lifecycle-Job). Die
+  # durchgehende 24/7-Erfassung macht der separate serverless Databricks-Job
+  # (resources/windguru_ingest.job.yml → scripts/ingest_job.py), damit auch nachts Historie
+  # für die Trends aufgebaut wird. So schreiben nicht zwei Stellen doppelt.
+  - name: POLL_ENABLED
+    value: "0"
+  # 0 = unbegrenzt aufbewahren (Saisonalitäten über Jahre).
+  - name: SNAPSHOT_RETENTION_DAYS
+    value: "0"
+
+  # Schema, das der App-Service-Principal in Lakebase besitzt (siehe DATABRICKS.md).
+  # Muss zum lakebase_schema in databricks.yml passen.
+  - name: LAKEBASE_SCHEMA
+    value: "windguru"
+
+  # Lakebase spritzt die Plattform aus der `postgres`-Ressource selbst ein: PGHOST,
+  # PGDATABASE, PGUSER und LAKEBASE_ENDPOINT. DATABRICKS_HOST + SP-Zugangsdaten
+  # (DATABRICKS_CLIENT_ID/SECRET) stellt die Apps-Runtime bereit. Deshalb hier NICHT.
