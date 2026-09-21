@@ -31,6 +31,12 @@ variables:
       Deploy angelegt (siehe DATABRICKS.md) — Lakebase-Projekte sind keine DAB-Ressource.
     default: windguru
 
+  lifecycle_pause:
+    description: >-
+      UNPAUSED = App läuft täglich 6–23 Uhr (Start-/Stopp-Jobs aktiv). PAUSED = die Jobs
+      ruhen (z. B. App gelöscht, nur Datenerfassung).
+    default: UNPAUSED
+
   lakebase_branch:
     description: Branch innerhalb des Lakebase-Projekts.
     default: production

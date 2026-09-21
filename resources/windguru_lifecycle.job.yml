@@ -1,6 +1,6 @@
 # Lifecycle-Jobs: halten die Windguru App im Fenster 6–23 Uhr (Europe/Berlin) verfügbar.
-# Derzeit PAUSIERT (App gestoppt, nur Datenerfassung läuft). Reaktivieren: pause_status auf
-# UNPAUSED setzen, `databricks bundle deploy`, `databricks apps start windguru`.
+# Pausieren (z. B. wenn die App gelöscht ist und nur die Datenerfassung laufen soll):
+#   databricks bundle deploy --var lifecycle_pause=PAUSED
 # Databricks Apps laufen sonst dauerhaft — hier startet ein Job sie morgens und ein zweiter
 # stoppt sie abends. Zwei getrennte Jobs, weil ein Job nur EINEN Zeitplan haben kann.
 #
@@ -16,7 +16,7 @@ resources:
         # Quartz-Cron: Sekunde Minute Stunde Tag Monat Wochentag. Täglich 06:00.
         quartz_cron_expression: "0 0 6 * * ?"
         timezone_id: Europe/Berlin
-        pause_status: PAUSED
+        pause_status: ${var.lifecycle_pause}
       tasks:
         - task_key: start_app
           notebook_task:
@@ -31,7 +31,7 @@ resources:
         # Täglich 23:00.
         quartz_cron_expression: "0 0 23 * * ?"
         timezone_id: Europe/Berlin
-        pause_status: PAUSED
+        pause_status: ${var.lifecycle_pause}
       tasks:
         - task_key: stop_app
           notebook_task:

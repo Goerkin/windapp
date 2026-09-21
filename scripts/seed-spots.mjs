@@ -13,8 +13,9 @@ const SPOTS = [
 
 const schema = process.env.LAKEBASE_SCHEMA || "public";
 const client = new pg.Client({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes("sslmode=require") ? { rejectUnauthorized: true } : undefined,
+  connectionString: process.env.DATABASE_URL?.replace(/[?&]sslmode=require/, "").replace(/[?&]schema=[^&]*/, ""),
+  // Lakebase verlangt TLS; das Zertifikat ist aus Node heraus nicht immer verifizierbar.
+  ssl: process.env.DATABASE_URL?.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
 });
 
 await client.connect();

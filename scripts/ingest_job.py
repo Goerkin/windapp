@@ -252,6 +252,12 @@ def _new_id():
 def ingest(conn):
     # 0 (Standard) = unbegrenzt aufbewahren — für Saisonalitäten über Jahre.
     retention_days = int(param("SNAPSHOT_RETENTION_DAYS", "0"))
+    # Verdichtung: älter als THIN_AFTER_DAYS nur noch EIN Datenstand je Spot und THIN_KEEP_H
+    # Stunden. Grund: Lakebase Free Edition = 512 MB je Branch; der 30-min-Takt speichert
+    # denselben Modelllauf bis zu 12× (≈ 5 MB/Tag). Verdichtet ≈ 0.4 MB/Tag → Jahre Platz.
+    # Die App nutzt volle Auflösung nur für die letzten 21 Tage; das Lernen ohnehin ≤ 1 Lauf/6 h.
+    thin_after_days = int(param("THIN_AFTER_DAYS", "21"))
+    thin_keep_h = int(param("THIN_KEEP_H", "6"))
     results = []
     with contextlib.closing(conn.cursor()) as cur:
         for sp in SPOTS:
@@ -337,13 +343,35 @@ def ingest(conn):
         except Exception as e:
             results.append({"water": f"Fehler: {e}"})
 
-        # 4) Nur bei gesetzter Aufbewahrung alte Snapshots/Messungen löschen.
+        # 5) Nur bei gesetzter Aufbewahrung alte Snapshots/Messungen löschen.
         if retention_days > 0:
             cutoff = dt.datetime.utcnow() - dt.timedelta(days=retention_days)
             cur.execute('DELETE FROM "Snapshot" WHERE "fetchedAt" < %s', (cutoff,))
             cur.execute('DELETE FROM "StationObs" WHERE "obsTime" < %s', (cutoff,))
 
     conn.commit()
+
+    # 4) Verdichten — erst NACH dem Commit und in eigener Transaktion: ein Fehler hier darf
+    #    die frisch geschriebenen Daten nie mitreißen. Je Spot und thin_keep_h-Zeitfenster
+    #    bleibt der früheste Datenstand; ModelSeries hängen per ON DELETE CASCADE dran.
+    if thin_after_days > 0 and thin_keep_h > 0:
+        try:
+            thin_cut = dt.datetime.utcnow() - dt.timedelta(days=thin_after_days)
+            with contextlib.closing(conn.cursor()) as cur:
+                cur.execute(
+                    'DELETE FROM "Snapshot" WHERE "id" IN ('
+                    ' SELECT "id" FROM ('
+                    '  SELECT "id", row_number() OVER ('
+                    '   PARTITION BY "spotId", floor(extract(epoch from "fetchedAt") / (%s * 3600))'
+                    '   ORDER BY "fetchedAt") AS rn'
+                    '  FROM "Snapshot" WHERE "fetchedAt" < %s) x'
+                    ' WHERE rn > 1)',
+                    (thin_keep_h, thin_cut))
+                results.append({"thinned": cur.rowcount})
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            results.append({"thinned": f"Fehler: {e}"})
     return results
 
 

@@ -38,5 +38,9 @@ resources:
               LAKEBASE_SCHEMA: ${var.lakebase_schema}
               LAKEBASE_PROJECT: ${var.lakebase_project}
               LAKEBASE_BRANCH: ${var.lakebase_branch}
-              # 0 = unbegrenzt aufbewahren (Saisonalität); ~2 GB/Jahr.
+              # 0 = unbegrenzt aufbewahren (Saisonalität).
               SNAPSHOT_RETENTION_DAYS: "0"
+              # Verdichtung (Lakebase Free Edition: 512 MB): älter als 21 Tage nur noch ein
+              # Datenstand je Spot und 6 h → ≈ 0.4 MB/Tag statt ≈ 5 MB/Tag.
+              THIN_AFTER_DAYS: "21"
+              THIN_KEEP_H: "6"

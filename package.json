@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "setup:databricks": "node scripts/setup.mjs",
     "dev": "next dev",
     "build:next": "next build --webpack",
     "start": "next start",
