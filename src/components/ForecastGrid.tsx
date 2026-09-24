@@ -21,7 +21,8 @@ const TREND_COLOR = { stabil: "#8a93a8", steigt: "#34d399", fällt: "#fb7185" } 
  * Kompakte Windguru-artige Tabelle: je Tag eine Spaltengruppe, je Stunde eine Spalte mit
  * farbigen Wind-/Böen-Kacheln, Richtungspfeil (Spot-Eignung), Wahrscheinlichkeit, Regen
  * und Temperatur. Wochenenden sind umrahmt, fahrbare Stunden grün markiert, unsichere Tage
- * (nur globale Modelle) blasser. So schmal, dass zwei Wochenenden auf einen Blick passen.
+ * (nur globale Modelle) blasser. So schmal, dass zwei Wochenenden auf einen Blick passen;
+ * ist mehr Platz da, füllt die Tabelle die ganze Breite (Zellen wachsen mit).
  *
  * `scrollRef`/`onScroll` erlauben der Übersicht, mehrere Raster seitlich zu koppeln; die
  * Tageskopfzellen tragen dafür `data-day`.
@@ -92,7 +93,7 @@ export default function ForecastGrid({
   const row = (rowIdx: number, label: string, render: (h: HourEval) => React.ReactNode, title?: string) => (
     <tr>
       <th
-        className="sticky left-0 z-10 bg-[color:var(--color-panel)] pr-1.5 text-left text-[9px] font-600 uppercase tracking-wider text-muted"
+        className="sticky left-0 z-10 w-px whitespace-nowrap bg-[color:var(--color-panel)] pr-1.5 text-left text-[9px] font-600 uppercase tracking-wider text-muted"
         title={title}
       >
         {label}
@@ -118,7 +119,7 @@ export default function ForecastGrid({
 
   return (
     <div className="overflow-x-auto pb-1" ref={scrollRef} onScroll={(e) => onScroll?.(e.currentTarget)}>
-      <table className="border-separate border-spacing-0">
+      <table className="w-full border-separate border-spacing-0">
         <thead>
           <tr>
             <th className="sticky left-0 z-10 bg-[color:var(--color-panel)]" />
