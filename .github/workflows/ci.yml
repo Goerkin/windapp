@@ -1,0 +1,61 @@
+# Prüft jeden Push und jeden Pull Request, bevor Vercel ihn ausliefert.
+#
+# Vercel deployt `master` automatisch — ohne diese Prüfung ginge ein Push, der Typen, Regeln
+# oder die Parity Python↔TS bricht, direkt live. Den Build selbst übernimmt Vercel (bei Pull
+# Requests als Preview), er wird hier nicht doppelt gerechnet.
+#
+# Damit ein roter Lauf das Mergen wirklich blockiert: in GitHub unter Settings → Branches eine
+# Regel für `master` mit „Require status checks" auf den Job „prüfen" setzen.
+
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruefen:
+    name: prüfen
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Der Parity-Test rechnet dieselben Fälle mit scripts/skill_job.py nach — dafür reicht
+      # numpy (pg8000 wird im Test gestubbt).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten
+        run: |
+          npm ci
+          python -m pip install --quiet numpy
+
+      # Die Typen von @prisma/client entstehen erst beim Generieren.
+      - name: Prisma-Client generieren
+        run: npx prisma generate
+
+      - name: Typprüfung
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests (Parity Python↔TS + Spot-Konfiguration)
+        run: npm test
+        env:
+          PYTHON: python
+
+      - name: Python-Jobs kompilieren
+        run: python -m py_compile scripts/ingest_job.py scripts/skill_job.py scripts/app_lifecycle.py
