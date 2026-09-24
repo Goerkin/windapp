@@ -18,7 +18,8 @@
     "db:push": "prisma db push",
     "seed": "node --env-file-if-exists=.env scripts/seed-spots.mjs",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "prisma generate && next build --webpack"
   },
   "prisma": {
     "seed": "node scripts/seed-spots.mjs"
