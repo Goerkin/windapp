@@ -62,7 +62,7 @@ export default function MethodPanel({ spot, unit }: { spot: SpotPayload; unit: W
               {v.variants.map((x) => {
                 const active = x.key === v.chosen;
                 return (
-                  <tr key={x.key} className="border-t border-border-soft" style={{ background: active ? "rgba(34,211,238,.06)" : undefined }}>
+                  <tr key={x.key} className="border-t border-border-soft" style={{ background: active ? "var(--tint-accent)" : undefined }}>
                     <td className="py-1.5 pr-3 text-body">
                       {x.label}
                       {active && <span className="ml-2 chip" style={{ color: PALETTE.teal }}>aktiv</span>}

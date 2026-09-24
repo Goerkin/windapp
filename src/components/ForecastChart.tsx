@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import type { SpotPayload, StationView } from "@/lib/types";
 import { convertWind, unitLabel, compass, type WindUnit } from "@/lib/units";
-import { PALETTE, ktColorHex } from "@/lib/palette";
+import { PALETTE, ktColor } from "@/lib/palette";
 import { nowcastOffsetAt, nowcastCutoff, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { fmtTime, windBands } from "./ui";
 
@@ -33,8 +33,8 @@ const stColor = (i: number) => STATION_COLORS[i % STATION_COLORS.length];
 
 type Row = Record<string, number | (number | null)[] | boolean | null>;
 
-const NOWCAST_COLOR = "#fde047";
-const PAST_COLOR = "#cbd5e1";
+const NOWCAST_COLOR = "#eab308"; // Mittelton: trägt auf hellem UND dunklem Grund
+const PAST_COLOR = "#94a3b8"; // dito
 
 export default function ForecastChart({
   spot,
@@ -51,7 +51,9 @@ export default function ForecastChart({
 }) {
   const [horizon, setHorizon] = useState(72);
 
-  const stations = spot.stations ?? [];
+  // useMemo, weil `?? []` sonst bei jedem Render ein neues Array liefert und die useMemo
+  // weiter unten dadurch nie greift.
+  const stations = useMemo(() => spot.stations ?? [], [spot.stations]);
   const shownStations = stations
     .map((s, i) => ({ st: s, i }))
     .filter(({ st }) => st.series.length > 0);
@@ -206,6 +208,7 @@ export default function ForecastChart({
           {midnights.map((m) => (
             <ReferenceLine
               key={m.t}
+              className="ref-chrome"
               x={m.t}
               stroke={PALETTE.axisLine}
               strokeDasharray="3 3"
@@ -306,7 +309,7 @@ export default function ForecastChart({
         <ComposedChart data={probData} margin={{ top: 8, right: 6, bottom: 0, left: -18 }}>
           <XAxis dataKey="t" type="number" scale="time" domain={[firstT, lastT]} hide allowDataOverflow />
           <YAxis domain={[0, 100]} ticks={[0, 50]} tick={{ fontSize: 10, fill: PALETTE.muted }} width={40} stroke={PALETTE.axisLine} />
-          <ReferenceLine y={50} stroke={PALETTE.axisLine} strokeDasharray="2 3" />
+          <ReferenceLine y={50} className="ref-chrome" stroke={PALETTE.axisLine} strokeDasharray="2 3" />
           <Bar dataKey="p" isAnimationActive={false}>
             {probData.map((d) => (
               <Cell
@@ -316,7 +319,7 @@ export default function ForecastChart({
               />
             ))}
           </Bar>
-          <Tooltip content={<ProbTooltip />} cursor={{ fill: "rgba(255,255,255,.05)" }} />
+          <Tooltip content={<ProbTooltip />} cursor={{ fill: "var(--tint-neutral)" }} />
         </ComposedChart>
       </ResponsiveContainer>
 
@@ -351,10 +354,10 @@ function DirDot(props: {
   if (cx == null || cy == null || payload?.dir == null || !payload?.arrow) {
     return <g />;
   }
-  const color = ktColorHex(payload.windKt ?? null);
+  const color = ktColor(payload.windKt ?? null);
   return (
     <g transform={`translate(${cx}, ${cy - 16}) rotate(${payload.dir + 180})`}>
-      <path d="M0 -4 L3 5 L0 3 L-3 5 Z" fill={color} />
+      <path d="M0 -4 L3 5 L0 3 L-3 5 Z" style={{ fill: color }} />
     </g>
   );
 }

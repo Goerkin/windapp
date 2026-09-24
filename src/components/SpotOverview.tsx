@@ -3,7 +3,7 @@ import { useCallback, useRef } from "react";
 import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
 import { unitLabel } from "@/lib/units";
-import { ktColorHex } from "@/lib/palette";
+import { ktColor } from "@/lib/palette";
 import { ratingLabel, dirQuality, dirHint, DIR_LABEL, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { WindArrow, Compass, WindowLine, WaterTemps, fmtWind } from "./ui";
 import ForecastGrid from "./ForecastGrid";
@@ -95,7 +95,7 @@ export default function SpotOverview({
                 <div className="text-right">
                   <div className="flex items-center justify-end gap-1.5">
                     <WindArrow dir={nowDir} kt={nowKt} size={18} />
-                    <span className="font-display text-3xl font-700 leading-none" style={{ color: ktColorHex(nowKt) }}>
+                    <span className="font-display text-3xl font-700 leading-none" style={{ color: ktColor(nowKt) }}>
                       {fmtWind(nowKt, unit)}
                     </span>
                     <span className="text-xs text-muted">{unitLabel(unit)}</span>

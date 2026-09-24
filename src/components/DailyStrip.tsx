@@ -2,7 +2,7 @@
 import type { DaySummary } from "@/lib/kite";
 import type { WindUnit } from "@/lib/units";
 import { unitLabel } from "@/lib/units";
-import { ktColorHex } from "@/lib/palette";
+import { ktColor } from "@/lib/palette";
 import { WindArrow, WindowLine, TrendMark, fmtWind } from "./ui";
 
 /**
@@ -31,7 +31,7 @@ export default function DailyStrip({
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {shown.map((d) => {
-          const color = ktColorHex(d.peak);
+          const color = ktColor(d.peak);
           const active = activeDay === d.day;
           const extra = d.windows.length - 1;
           return (
@@ -41,8 +41,8 @@ export default function DailyStrip({
               onClick={() => onSelect?.(d.day)}
               className="min-w-[168px] flex-1 rounded-xl border p-2.5 text-left transition-colors hover:border-accent"
               style={{
-                background: active ? "rgba(34,211,238,.06)" : d.best ? "rgba(34,197,94,.05)" : "rgba(255,255,255,.015)",
-                borderColor: active ? "var(--color-accent)" : d.best ? "rgba(34,197,94,.35)" : "var(--color-border)",
+                background: active ? "var(--tint-accent)" : d.best ? "var(--tint-good)" : "var(--tint-neutral)",
+                borderColor: active ? "var(--color-accent)" : d.best ? "var(--tint-good-line)" : "var(--color-border)",
                 cursor: onSelect ? "pointer" : "default",
                 opacity: d.globalOnly ? 0.6 : 1,
               }}

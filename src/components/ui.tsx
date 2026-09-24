@@ -1,7 +1,7 @@
 "use client";
 import { compass, convertWind, unitLabel, type WindUnit } from "@/lib/units";
 import { ReferenceArea } from "recharts";
-import { ktColorHex, PALETTE } from "@/lib/palette";
+import { ktColor, PALETTE } from "@/lib/palette";
 import { TH, type RideWindow, type TrendState } from "@/lib/kite";
 
 const TZ = "Europe/Amsterdam";
@@ -54,10 +54,10 @@ export function WindArrow({
   size?: number;
 }) {
   if (dir == null) return <span className="text-muted">–</span>;
-  const color = kt != null ? ktColorHex(kt) : "#c3cbdc";
+  const color = kt != null ? ktColor(kt) : "var(--color-body)";
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" style={{ transform: `rotate(${dir + 180}deg)` }}>
-      <path d="M12 2 L18 20 L12 16 L6 20 Z" fill={color} />
+      <path d="M12 2 L18 20 L12 16 L6 20 Z" style={{ fill: color }} />
     </svg>
   );
 }
@@ -74,7 +74,7 @@ export function DeltaBadge({
   const pre = label ? <span style={{ opacity: 0.6, marginRight: 3 }}>{label}</span> : null;
   if (delta == null || Math.abs(delta) < 0.5) {
     return (
-      <span className="chip" style={{ color: "#8a93a8" }}>
+      <span className="chip" style={{ color: "var(--color-muted)" }}>
         {pre}→
       </span>
     );
@@ -86,9 +86,9 @@ export function DeltaBadge({
     <span
       className="chip"
       style={{
-        color: up ? "#34d399" : "#fb7185",
-        borderColor: up ? "rgba(52,211,153,.35)" : "rgba(251,113,133,.35)",
-        background: up ? "rgba(52,211,153,.08)" : "rgba(251,113,133,.08)",
+        color: up ? "var(--tint-up)" : "var(--tint-down)",
+        borderColor: up ? "var(--tint-up)" : "var(--tint-down)",
+        background: "var(--tint-neutral)",
       }}
       title={`Änderung des Tages-Winds (Ø stärkste 3 h) gegenüber dem Datenstand vor ~${label ?? "24 h"}`}
     >
@@ -129,7 +129,7 @@ export function WindowLine({
         {!compact && " Uhr"}
       </span>
       <span className="text-faint">·</span>
-      <span className="font-mono" style={{ color: ktColorHex((w.lo + w.hi) / 2) }}>
+      <span className="font-mono" style={{ color: ktColor((w.lo + w.hi) / 2) }}>
         {lo === hi ? lo : `${lo}–${hi}`}
       </span>
       <span className="text-muted">{unitLabel(unit)}</span>

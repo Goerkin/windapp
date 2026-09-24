@@ -1,7 +1,14 @@
-// Statische Stammdaten: die beiden Spots und die Modell-Metadaten für die Tiefen-Ansicht.
+// Statische Stammdaten: Spot-Typen (Daten in config/spots.json) und die Modell-Metadaten für
+// die Tiefen-Ansicht.
 // Windguru liefert Modellname/Auflösung/Gewicht dynamisch mit; hier ergänzen wir kurze
 // deutsche Beschreibungen + Kategorie, damit die "Modelle im Detail"-Ansicht erklärt, was
 // jedes Modell ist und warum es für Brouwersdam/Mirns relevant ist.
+
+// Quelle einer Live-Messstation:
+//  - "windguru": Windguru-Station, id = id_station (q=station_data_current, Werte in kn)
+//  - "soarcast": NKV/soarcast-Messnetz, id = location_id (mv_measurement_location_markers,
+//    Werte in m/s → werden in kn umgerechnet)
+import spotsFile from "../../config/spots.json";
 
 // Quelle einer Live-Messstation:
 //  - "windguru": Windguru-Station, id = id_station (q=station_data_current, Werte in kn)
@@ -13,6 +20,7 @@ export type StationDef = {
   id: number; // id_station (windguru) bzw. location_id (soarcast)
   name: string; // Anzeigename der Messstation
   source: StationSource;
+  note?: string;
 };
 
 /**
@@ -26,13 +34,14 @@ export type DirSectors = {
   good: [number, number][];
   ok: [number, number][];
   hints?: { range: [number, number]; text: string }[];
+  note?: string;
 };
 
 /**
  * Rijkswaterstaat-Messstelle für die Wassertemperatur (DDAPI20, Grootheid T, Compartiment
  * OW; 10-min-Werte). Die ERSTE Stelle je Spot ist die Referenz (Anzeige + Rechnung).
  */
-export type WaterStationDef = { code: string; name: string };
+export type WaterStationDef = { code: string; name: string; note?: string };
 
 export type SpotDef = {
   id: number; // Windguru id_spot
@@ -48,58 +57,10 @@ export type SpotDef = {
   stations?: StationDef[];
 };
 
-export const SPOTS: SpotDef[] = [
-  {
-    id: 97,
-    slug: "brouwersdam",
-    name: "Brouwersdam",
-    region: "Zeeland · NL",
-    sortOrder: 0,
-    lat: 51.767,
-    lon: 3.853,
-    // SW–NW: am Damm side-/side-onshore (W/NW ideal). S–O: fahrbar auf der
-    // Grevelingen-Seite bzw. im Hafenbereich. N–NO: nicht beschrieben → vorsichtig „bedingt".
-    dirs: {
-      good: [[214, 326]],
-      ok: [[326, 214]],
-      hints: [
-        { range: [304, 326], text: "NW: am Damm onshore — besser am Ende der Promenade (Ouddorp)" },
-        { range: [90, 214], text: "S/O: Grevelingenmeer-Seite oder Hafenbereich nutzen" },
-        { range: [326, 90], text: "N/NO: ungeprüft — vor Ort einschätzen" },
-      ],
-    },
-    stations: [{ id: 521, name: "Natural High", source: "windguru" }],
-    // 3.4 km vor dem Damm (Nordsee) + Grevelingen-Seite (relevant bei S/O-Wind).
-    water: [
-      { code: "brouwershavensche.gat.08", name: "Nordsee" },
-      { code: "bommenede", name: "Grevelingen" },
-    ],
-  },
-  {
-    id: 3642,
-    slug: "mirns",
-    name: "Mirns",
-    region: "Friesland · IJsselmeer · NL",
-    sortOrder: 1,
-    lat: 52.853,
-    lon: 5.473,
-    // SO/S/SW optimal (konstant, on-/sideshore), W/WNW gut (Freeride). O fahrbar, aber
-    // ablandig und oft wenig Wasser am Ufer. N-Sektor (NNW–NO) ablandig/böig → vermeiden.
-    // NW ist nicht beschrieben → Übergang, „bedingt".
-    dirs: {
-      good: [[124, 304]],
-      ok: [[56, 124], [304, 326]],
-      hints: [
-        { range: [56, 124], text: "O: ablandig, oft wenig Wasser am Ufer" },
-        { range: [304, 326], text: "NW: Übergang zum Nord-Sektor — vorsichtig" },
-        { range: [326, 56], text: "Nord: ablandig & unbeständig — fatal für den Einstieg" },
-      ],
-    },
-    // Mirns NKV misst direkt am Spot — die Referenzmessung für Bewertung/Skill.
-    stations: [{ id: 154, name: "Mirns NKV", source: "soarcast" }],
-    water: [{ code: "friesekust.ijsselmeer", name: "IJsselmeer" }], // 3.4 km vor Mirns
-  },
-];
+// Die Spots selbst stehen in config/spots.json — der einzigen Quelle, die auch der
+// Erfassungs-Job und der Seed lesen. JSON kennt keine Tupel/Literaltypen, daher der Cast;
+// die Form prüft tests/spots.test.ts.
+export const SPOTS = spotsFile.spots as SpotDef[];
 
 /**
  * Die aktuell definierten Mess-Stations-IDs eines Spots. Alle Mess-Aggregationen

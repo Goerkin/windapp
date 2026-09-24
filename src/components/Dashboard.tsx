@@ -8,9 +8,9 @@ import SpotPanel from "./SpotPanel";
 import SpotOverview from "./SpotOverview";
 import { relTime } from "./ui";
 
-// Ab diesem Alter des Datenstands holt „Aktualisieren" zuerst frische Windguru-Daten
-// (der 24/7-Job läuft alle 30 min — meist reicht es, nur die Ansicht neu zu laden).
-const STALE_MIN = 35;
+// Ab diesem Alter gilt der Datenstand als hängend und wird angemahnt. Der 24/7-Job zieht
+// alle 30 min; die App holt selbst KEINE Daten mehr (ein Schreibpfad, nicht zwei).
+const STALE_MIN = 45;
 
 export default function Dashboard({
   initialSpots,
@@ -25,7 +25,7 @@ export default function Dashboard({
   // Tages-Sprung aus der Übersicht; `nonce` erzwingt das Öffnen auch beim selben Tag.
   const [jump, setJump] = useState<{ day: string | null; nonce: number }>({ day: null, nonce: 0 });
   const [error, setError] = useState<string | null>(initialError);
-  const [busy, setBusy] = useState<null | "view" | "pull">(null);
+  const [busy, setBusy] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const evals = useMemo(
@@ -52,26 +52,20 @@ export default function Dashboard({
     setSpots(json.spots);
   }, []);
 
-  // Ein Button für alles: Ansicht neu laden; ist der Datenstand älter als STALE_MIN, vorher
-  // frische Windguru-Daten ziehen (in-App-Ingest, ~10–20 s).
   const refresh = useCallback(async () => {
-    const ageMin = lastFetch ? (Date.now() - new Date(lastFetch).getTime()) / 60000 : Infinity;
-    const pull = ageMin > STALE_MIN;
-    setBusy(pull ? "pull" : "view");
+    setBusy(true);
     setError(null);
     try {
-      if (pull) {
-        const res = await fetch("/api/ingest?force=1", { method: "POST" });
-        const json = await res.json();
-        if (!json.ok) setError(json.error ?? "Datenabruf fehlgeschlagen");
-      }
       await loadView();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
-  }, [lastFetch, loadView]);
+  }, [loadView]);
+
+  const ageMin = lastFetch ? (Date.now() - new Date(lastFetch).getTime()) / 60000 : null;
+  const stale = ageMin != null && ageMin > STALE_MIN;
 
   // Ansicht alle 10 Minuten still neu laden (die Windguru-Abrufe macht der Job).
   useEffect(() => {
@@ -90,26 +84,21 @@ export default function Dashboard({
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <header className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <WindLogo />
-            <h1 className="font-display text-2xl font-700 text-ink sm:text-3xl">Wind Cockpit</h1>
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
+        <div className="flex items-center gap-2.5">
+          <WindLogo />
+          <div>
+            <h1 className="font-display text-2xl font-700 leading-none text-ink sm:text-3xl">Wind Cockpit</h1>
+            <p
+              className="mt-1 text-[11px] text-faint"
+              title="Referenz Twintip, 80 kg: fahrbar ab / gut ab / kräftig ab / zu viel ab"
+            >
+              fahrbar ab {th.min} · gut {th.good} · kräftig {th.strong} · zu viel {th.over} kn
+            </p>
           </div>
-          <button
-            onClick={refresh}
-            disabled={busy != null}
-            className="chip hover:border-accent sm:hidden"
-            style={{ cursor: busy ? "wait" : "pointer" }}
-          >
-            <span className={busy ? "animate-spin" : ""}>↻</span> {busy === "pull" ? "hole Daten…" : busy ? "lädt…" : "Aktualisieren"}
-          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <Link href="/hilfe" className="chip hover:border-accent" title="Was sehe ich hier und wie entstehen die Zahlen?">
-            ? Hilfe
-          </Link>
           <div className="seg" role="group" aria-label="Einheit">
             {(["kn", "ms"] as WindUnit[]).map((u) => (
               <button key={u} data-active={unit === u} onClick={() => setUnit(u)}>
@@ -117,31 +106,33 @@ export default function Dashboard({
               </button>
             ))}
           </div>
-          <span className="text-[11px] text-faint" title="Referenz Twintip, 80 kg: fahrbar ab / gut ab / kräftig ab / zu viel ab">
-            ab {th.min} · gut {th.good} · kräftig {th.strong} · max {th.over} kn
-          </span>
-          <div className="hidden items-center gap-2 text-xs text-muted sm:flex">
-            {lastFetch && (
-              <span>
-                Datenstand <span className="text-body">{relTime(lastFetch)}</span>
-              </span>
-            )}
+          <Link href="/analyse" className="chip hover:border-accent" title="Modellvergleich und Güte-Rückschau">
+            Analyse
+          </Link>
+          <Link href="/hilfe" className="chip hover:border-accent" title="Was sehe ich hier und wie entstehen die Zahlen?">
+            ? Hilfe
+          </Link>
+          {lastFetch && (
             <button
               onClick={refresh}
-              disabled={busy != null}
+              disabled={busy}
               className="chip hover:border-accent"
-              style={{ cursor: busy ? "wait" : "pointer" }}
-              title={`Ansicht neu laden — ist der Datenstand älter als ${STALE_MIN} min, werden vorher frische Windguru-Daten geholt`}
+              style={{ cursor: busy ? "wait" : "pointer", color: stale ? "var(--wg-amber)" : undefined }}
+              title={
+                stale
+                  ? `Der Datenstand ist ${Math.round(ageMin!)} min alt — der Erfassungs-Job läuft alle 30 min. Klick lädt die Ansicht neu.`
+                  : "Ansicht neu laden"
+              }
             >
               <span className={busy ? "animate-spin" : ""}>↻</span>{" "}
-              {busy === "pull" ? "hole neue Daten…" : busy ? "lädt…" : "Aktualisieren"}
+              {busy ? "lädt…" : <>Stand {relTime(lastFetch)}</>}
             </button>
-          </div>
+          )}
         </div>
       </header>
 
       {error && (
-        <div className="panel-flat mb-4 border-l-2 p-4 text-sm" style={{ borderLeftColor: "#fb7185" }}>
+        <div className="panel-flat mb-4 border-l-2 p-4 text-sm" style={{ borderLeftColor: "var(--wg-red)" }}>
           <span className="text-body">Fehler beim Laden der Daten: {error}</span>
         </div>
       )}
@@ -150,8 +141,8 @@ export default function Dashboard({
         <div className="panel mb-6 p-8 text-center">
           <p className="font-display text-lg text-ink">Noch keine Daten</p>
           <p className="mt-2 text-sm text-muted">
-            Der Server ruft die Windguru-Daten gleich zum ersten Mal ab. Lade die Seite in ein
-            bis zwei Minuten neu – oder tippe auf „Aktualisieren".
+            Die Erfassung läuft als eigener Job (alle 30 min), nicht in dieser Ansicht. Nach dem
+            ersten Lauf steht hier etwas — Seite dann neu laden.
           </p>
         </div>
       )}
@@ -184,16 +175,14 @@ export default function Dashboard({
 
       <footer className="mt-8 border-t border-border-soft pt-4 text-xs text-faint">
         <p>
-          Der „Konsens" ist ein eigener Modell-Mix: je Stunde ein gewichtetes Mittel über alle
-          verfügbaren Modelle. Jedes Modell wird vorher statistisch nachkorrigiert (systematischer
-          Fehler an diesem Spot, je nach Vorlauf, Richtung und ggf. Windstärke/Temperatur) und nach
-          seinem Restfehler gewichtet. Welche Variante gilt, entscheidet eine ehrliche Rückschau
-          gegen die Messstation. In den nächsten Stunden fließt die aktuelle Abweichung der Station
-          ein. Prozentangaben sind kalibrierte Wahrscheinlichkeiten für den Mindestwind (Referenz:
-          Twintip, 80 kg). Daten: frei abrufbare Windguru-Modelldaten; privates Dashboard, nicht mit
-          Windguru affiliiert.{" "}
+          Eigener Modell-Mix aus frei abrufbaren Windguru-Modelldaten, statistisch nachkorrigiert
+          und gegen die Messstation geprüft. Privates Dashboard, nicht mit Windguru affiliiert.{" "}
           <Link href="/hilfe" className="underline hover:text-accent">
-            Mehr dazu in der Hilfe.
+            Wie die Zahlen entstehen
+          </Link>{" "}
+          ·{" "}
+          <Link href="/analyse" className="underline hover:text-accent">
+            Modelle &amp; Genauigkeit
           </Link>
         </p>
       </footer>

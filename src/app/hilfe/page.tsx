@@ -82,13 +82,13 @@ export default function HelpPage() {
             <div className="font-600 text-ink">{s.name}</div>
             <ul className="ml-4 list-disc text-body">
               <li>
-                <span style={{ color: PALETTE.green }}>gut:</span> {s.dirs.good.map(sector).join(", ")}
+                <span style={{ color: "var(--wg-green)" }}>gut:</span> {s.dirs.good.map(sector).join(", ")}
               </li>
               <li>
-                <span style={{ color: PALETTE.amber }}>bedingt:</span> {s.dirs.ok.map(sector).join(", ")}
+                <span style={{ color: "var(--wg-amber)" }}>bedingt:</span> {s.dirs.ok.map(sector).join(", ")}
               </li>
               <li>
-                <span style={{ color: PALETTE.red }}>ungeeignet:</span> alles andere
+                <span style={{ color: "var(--wg-red)" }}>ungeeignet:</span> alles andere
               </li>
               {s.dirs.hints?.map((h) => (
                 <li key={h.text} className="text-muted">
@@ -215,7 +215,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
     <div className="mb-4 flex gap-3">
       <div
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full font-display text-sm font-700"
-        style={{ background: "rgba(34,211,238,.15)", color: PALETTE.teal }}
+        style={{ background: "var(--tint-accent)", color: "var(--wg-teal)" }}
       >
         {n}
       </div>
@@ -241,28 +241,28 @@ function Pipeline() {
     <svg viewBox="0 0 840 170" className="mt-4 w-full" role="img" aria-label="Rechenweg der Prognose">
       <defs>
         <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
-          <path d="M0 0 L10 5 L0 10 z" fill={PALETTE.muted} />
+          <path d="M0 0 L10 5 L0 10 z" className="fill-muted" />
         </marker>
       </defs>
       {boxes.map((b, i) => (
         <g key={b.label}>
-          <rect x={b.x} y={20} width={120} height={52} rx={10} fill="rgba(34,211,238,.08)" stroke={i === 5 ? PALETTE.green : PALETTE.teal} strokeOpacity={0.6} />
-          <text x={b.x + 60} y={43} textAnchor="middle" fill={PALETTE.ink} fontSize={14} fontWeight={600}>
+          <rect x={b.x} y={20} width={120} height={52} rx={10} className="fill-accent" fillOpacity={0.08} stroke={i === 5 ? PALETTE.green : PALETTE.teal} strokeOpacity={0.6} />
+          <text x={b.x + 60} y={43} textAnchor="middle" className="fill-ink" fontSize={14} fontWeight={600}>
             {b.label}
           </text>
-          <text x={b.x + 60} y={61} textAnchor="middle" fill={PALETTE.muted} fontSize={11}>
+          <text x={b.x + 60} y={61} textAnchor="middle" className="fill-muted" fontSize={11}>
             {b.sub}
           </text>
-          {i < boxes.length - 1 && <line x1={b.x + 122} y1={46} x2={b.x + 138} y2={46} stroke={PALETTE.muted} markerEnd="url(#arr)" />}
+          {i < boxes.length - 1 && <line x1={b.x + 122} y1={46} x2={b.x + 138} y2={46} className="stroke-muted" markerEnd="url(#arr)" />}
         </g>
       ))}
       {/* Lernschleife */}
       <rect x={150} y={118} width={260} height={40} rx={10} fill="rgba(244,114,182,.08)" stroke="#f472b6" strokeOpacity={0.6} />
-      <text x={280} y={136} textAnchor="middle" fill={PALETTE.ink} fontSize={13} fontWeight={600}>
+      <text x={280} y={136} textAnchor="middle" className="fill-ink" fontSize={13} fontWeight={600}>
         Messstation ↔ frühere Prognosen
       </text>
-      <text x={280} y={151} textAnchor="middle" fill={PALETTE.muted} fontSize={11}>
-        lernt stündlich neu
+      <text x={280} y={151} textAnchor="middle" className="fill-muted" fontSize={11}>
+        eigener Lern-Job, stündlich
       </text>
       <path d="M210 118 V76" stroke="#f472b6" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" />
       <path d="M350 118 V76" stroke="#f472b6" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" />
@@ -321,9 +321,9 @@ function ProbSketch() {
       <text x={x(TH.min) + 4} y={20} fill={PALETTE.green} fontSize={11}>
         {TH.min} kn
       </text>
-      <line x1={20} y1={H - 22} x2={W - 20} y2={H - 22} stroke={PALETTE.axisLine} />
+      <line x1={20} y1={H - 22} x2={W - 20} y2={H - 22} className="stroke-faint" />
       {[0, 5, 10, 15, 20, 25].map((k) => (
-        <text key={k} x={x(k)} y={H - 6} textAnchor="middle" fill={PALETTE.muted} fontSize={10}>
+        <text key={k} x={x(k)} y={H - 6} textAnchor="middle" className="fill-muted" fontSize={10}>
           {k}
         </text>
       ))}
@@ -339,7 +339,7 @@ function NowcastSketch() {
       {gain.map((g, k) => (
         <div key={k} className="flex w-8 flex-col items-center gap-1">
           <div className="flex h-12 w-4 items-end rounded bg-[color:var(--color-bg-2)]">
-            <div className="w-full rounded" style={{ height: `${g * 100}%`, background: "#fde047", opacity: 0.8 }} />
+            <div className="w-full rounded" style={{ height: `${g * 100}%`, background: "var(--wg-amber)", opacity: 0.8 }} />
           </div>
           <span className="font-mono text-[10px] text-muted">+{k} h</span>
         </div>

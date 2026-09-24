@@ -14,11 +14,9 @@ import {
 } from "recharts";
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, compass, topKMean, type WindUnit } from "@/lib/units";
-import { PALETTE, ktColorHex } from "@/lib/palette";
+import { PALETTE, ktColor } from "@/lib/palette";
 import { DIR_LABEL, MIN_WINDOW_H, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { WindArrow, DeltaBadge, WindowLine, TrendMark, fmtTime, hourOf, windBands } from "./ui";
-
-const TZ = "Europe/Amsterdam";
 
 export default function DayDetail({
   spot,
@@ -119,8 +117,8 @@ export default function DayDetail({
             onClick={() => onSelectDay(d.day)}
             className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-600 transition-colors"
             style={{
-              borderColor: d.day === day ? ktColorHex(d.peak) : d.best ? "rgba(34,197,94,.45)" : "var(--color-border)",
-              background: d.day === day ? "rgba(255,255,255,.04)" : "transparent",
+              borderColor: d.day === day ? ktColor(d.peak) : d.best ? "var(--tint-good-line)" : "var(--color-border)",
+              background: d.day === day ? "var(--tint-neutral)" : "transparent",
               color: d.day === day ? "var(--color-ink)" : "var(--color-muted)",
               opacity: d.globalOnly ? 0.6 : 1,
             }}
@@ -161,7 +159,7 @@ export default function DayDetail({
       {stats && (
         <div className="mb-3 flex flex-wrap items-center gap-x-6 gap-y-2">
           <Stat label="stärkste 3 h" big>
-            <span style={{ color: ktColorHex(stats.sustained) }}>{conv(stats.sustained)}</span>
+            <span style={{ color: ktColor(stats.sustained) }}>{conv(stats.sustained)}</span>
             <span className="ml-1 text-xs text-muted">{unitLabel(unit)}</span>
           </Stat>
           <Stat label="Böen (Ø 3 h)">{conv(stats.gustSustained)} {unitLabel(unit)}</Stat>
@@ -251,7 +249,7 @@ export default function DayDetail({
                 style={{ background: ev?.rideable ? "rgba(34,197,94,.06)" : undefined }}
               >
                 <td className="py-1.5 pr-3 font-mono text-body">{fmtTime(t)}</td>
-                <td className="py-1.5 pr-3 font-mono font-600" style={{ color: ktColorHex(p?.windspd ?? null) }}>
+                <td className="py-1.5 pr-3 font-mono font-600" style={{ color: ktColor(p?.windspd ?? null) }}>
                   {conv(p?.windspd ?? null)}
                 </td>
                 <td className="py-1.5 pr-3 font-mono text-body">{conv(p?.gust ?? null)}</td>
@@ -347,7 +345,7 @@ function DirDot(props: { cx?: number; cy?: number; index?: number; payload?: { d
   if (cx == null || cy == null || payload?.dir == null || index == null || index % 3 !== 0) return <g />;
   return (
     <g transform={`translate(${cx}, ${cy - 15}) rotate(${payload.dir + 180})`}>
-      <path d="M0 -4 L3 5 L0 3 L-3 5 Z" fill={ktColorHex(payload.windKt ?? null)} />
+      <path d="M0 -4 L3 5 L0 3 L-3 5 Z" style={{ fill: ktColor(payload.windKt ?? null) }} />
     </g>
   );
 }

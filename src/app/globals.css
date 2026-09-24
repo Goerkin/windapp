@@ -1,32 +1,60 @@
 @import "tailwindcss";
 
 /* ============================================================
-   Windguru Dashboard — Dark Cockpit / Marine
-   ============================================================ */
+   Wind Cockpit — Farbsystem
+   ============================================================
+   Zwei Themen: hell ist die Vorgabe (@theme unten), dunkel kommt per
+   prefers-color-scheme. Grund für das helle Thema: die App wird am Wasser bei
+   Sonne benutzt — ein fast schwarzer Hintergrund ist dort die schlechteste
+   Wahl. Umgeschaltet wird ausschließlich über die System-Einstellung, ohne
+   eigenen Schalter (ein Schalter bräuchte Speicherung und einen Zustand mehr).
+
+   Regel: Farben NIE hart in Komponenten schreiben, immer über diese Variablen
+   (bzw. ktColor() in palette.ts). Sonst kippt genau eine Stelle nicht mit. */
 @theme {
-  --color-bg: #080c17;
-  --color-bg-2: #0b1120;
-  --color-panel: #121a2e;
-  --color-panel-2: #16203a;
-  --color-border: #1e2740;
-  --color-border-soft: #17203a;
-  --color-ink: #e8edf6;
-  --color-body: #c3cbdc;
-  --color-muted: #8a93a8;
-  --color-faint: #5b647c;
+  /* ── Flächen und Text (hell) ── */
+  --color-bg: #f2f6fb;
+  --color-bg-2: #e8eef7;
+  --color-panel: #ffffff;
+  --color-panel-2: #f8fbfe;
+  --color-border: #ccd7e6;
+  --color-border-soft: #e0e8f2;
+  --color-ink: #0c1626;
+  --color-body: #33405a;
+  --color-muted: #5b6880;
+  --color-faint: #8894a9;
 
-  --color-accent: #22d3ee;
-  --color-accent-dim: #0e7490;
-  --color-amber: #f59e0b;
+  --color-accent: #0e7490;
+  --color-accent-dim: #22d3ee;
+  --color-amber: #b45309;
 
-  /* Wind-Skala (Knoten) */
-  --wg-grey: #64748b;
-  --wg-blue: #3b82f6;
-  --wg-teal: #22d3ee;
-  --wg-green: #22c55e;
-  --wg-amber: #f59e0b;
-  --wg-orange: #f97316;
-  --wg-red: #ef4444;
+  /* ── Wind-Skala (Knoten) — dieselbe Reihenfolge in beiden Themen, nur
+        abgedunkelt, damit sie auf Weiß als Text lesbar bleibt. ── */
+  --wg-grey: #5b6880;
+  --wg-blue: #2563eb;
+  --wg-teal: #0891b2;
+  --wg-green: #16a34a;
+  --wg-amber: #b45309;
+  --wg-orange: #c2410c;
+  --wg-red: #dc2626;
+
+  /* ── Diagramm-Chrome. Wird in den Recharts-Komponenten als SVG-ATTRIBUT
+        gesetzt (palette.ts); CSS gewinnt gegen Präsentationsattribute, deshalb
+        genügt die zentrale Regel weiter unten — die Farbe muss nicht durch
+        jede Chart-Komponente gefädelt werden. ── */
+  --chart-axis: #33405a;
+  --chart-axis-line: #a9b6c9;
+  --chart-grid: #dde5ef;
+  --chart-tooltip-bg: rgba(255, 255, 255, 0.97);
+
+  /* ── Zarte Einfärbungen (Kachel-/Zeilenhintergründe). Als Variable, weil
+        „weiß mit 1.5 % Deckkraft" auf hellem Grund nichts ergibt. ── */
+  --tint-neutral: rgba(12, 22, 38, 0.03);
+  --tint-accent: rgba(14, 116, 144, 0.08);
+  --tint-good: rgba(22, 163, 74, 0.08);
+  --tint-good-line: rgba(22, 163, 74, 0.35);
+  --tint-up: #15803d;
+  --tint-down: #be123c;
 
   --radius-card: 16px;
   --radius-chip: 8px;
@@ -34,6 +62,48 @@
   --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-grotesk), "Space Grotesk", var(--font-inter), sans-serif;
   --font-mono: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* ── Dunkles Thema: nur die Werte werden getauscht, keine Utility-Klasse
+      ändert sich. Bewusst NICHT in @layer, damit es die @theme-Werte sicher
+      überschreibt. ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #080c17;
+    --color-bg-2: #0b1120;
+    --color-panel: #121a2e;
+    --color-panel-2: #16203a;
+    --color-border: #1e2740;
+    --color-border-soft: #17203a;
+    --color-ink: #e8edf6;
+    --color-body: #c3cbdc;
+    --color-muted: #8a93a8;
+    --color-faint: #5b647c;
+
+    --color-accent: #22d3ee;
+    --color-accent-dim: #0e7490;
+    --color-amber: #f59e0b;
+
+    --wg-grey: #64748b;
+    --wg-blue: #3b82f6;
+    --wg-teal: #22d3ee;
+    --wg-green: #22c55e;
+    --wg-amber: #f59e0b;
+    --wg-orange: #f97316;
+    --wg-red: #ef4444;
+
+    --chart-axis: #eaeef7;
+    --chart-axis-line: #55618a;
+    --chart-grid: #2b3654;
+    --chart-tooltip-bg: rgba(11, 17, 32, 0.95);
+
+    --tint-neutral: rgba(255, 255, 255, 0.015);
+    --tint-accent: rgba(34, 211, 238, 0.06);
+    --tint-good: rgba(34, 197, 94, 0.05);
+    --tint-good-line: rgba(34, 197, 94, 0.35);
+    --tint-up: #34d399;
+    --tint-down: #fb7185;
+  }
 }
 
 html,
@@ -44,8 +114,8 @@ body {
 
 body {
   background:
-    radial-gradient(1200px 600px at 15% -10%, #0f1b34 0%, transparent 55%),
-    radial-gradient(1000px 500px at 100% 0%, #10233a 0%, transparent 50%),
+    radial-gradient(1200px 600px at 15% -10%, var(--color-bg-2) 0%, transparent 55%),
+    radial-gradient(1000px 500px at 100% 0%, var(--color-bg-2) 0%, transparent 50%),
     var(--color-bg);
   color: var(--color-body);
   font-family: var(--font-sans);
@@ -86,7 +156,7 @@ body {
     letter-spacing: 0.02em;
     border: 1px solid var(--color-border);
     color: var(--color-body);
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--tint-neutral);
   }
 
   .tab-btn {
@@ -102,7 +172,7 @@ body {
     color: var(--color-ink);
   }
   .tab-btn[data-active="true"] {
-    color: var(--color-bg);
+    color: var(--color-panel);
     background: var(--color-accent);
     box-shadow: 0 0 20px -6px var(--color-accent);
   }
@@ -124,7 +194,7 @@ body {
   }
   .seg > button[data-active="true"] {
     color: var(--color-ink);
-    background: var(--color-panel-2);
+    background: var(--color-panel);
     border: 1px solid var(--color-border);
   }
 
@@ -132,39 +202,48 @@ body {
     width: 8px;
     height: 8px;
     border-radius: 999px;
-    background: #22c55e;
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+    background: var(--wg-green);
     animation: pulse 2s infinite;
   }
 }
 
 @keyframes pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wg-green) 45%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 7px rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--wg-green) 0%, transparent);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wg-green) 0%, transparent);
   }
 }
 
-/* Recharts: klar lesbare Achsen im Dark-Theme */
-.recharts-cartesian-axis-tick text {
-  fill: #eaeef7 !important;
+/* ── Recharts: Achsen, Gitter und Tooltip themenabhängig.
+      Die Komponenten setzen dieselben Farben als SVG-Attribut (PALETTE in
+      palette.ts). CSS schlägt Präsentationsattribute, also gewinnt das hier —
+      ohne !important und ohne Änderung an den Chart-Komponenten. Semantische
+      Farben (Wind-Skala, Modell-Linien) bleiben absichtlich unberührt. ── */
+.recharts-cartesian-axis-tick text,
+.recharts-label,
+.ref-chrome text {
+  fill: var(--chart-axis);
   font-size: 12px;
   font-weight: 600;
 }
-.recharts-label,
-.recharts-reference-line text {
-  fill: #eaeef7 !important;
-  font-weight: 600;
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line,
+.ref-chrome .recharts-reference-line-line {
+  stroke: var(--chart-axis-line);
+}
+.recharts-cartesian-grid line {
+  stroke: var(--chart-grid);
 }
 .recharts-default-tooltip {
-  background: rgba(11, 17, 32, 0.95) !important;
+  background: var(--chart-tooltip-bg) !important;
   border: 1px solid var(--color-border) !important;
   border-radius: 10px !important;
+  color: var(--color-body) !important;
 }
 
 ::-webkit-scrollbar {
@@ -174,4 +253,10 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 999px;
+}
+
+/* Die hervorgehobene Konsens-Linie im Modellvergleich. Über eine Klasse und nicht über das
+   stroke-Attribut, weil ein SVG-Präsentationsattribut keine CSS-Variable auflösen kann. */
+.line-consensus .recharts-line-curve {
+  stroke: var(--chart-axis);
 }

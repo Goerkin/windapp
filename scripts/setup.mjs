@@ -7,21 +7,26 @@
  *   databricks auth login --host https://<workspace>.cloud.databricks.com   # einmalig, legt Profil an
  *   node scripts/setup.mjs --profile <profil>
  *
+ * Standard ist die DATENBASIS ohne Oberfläche: Erfassungs-Job + Lern-Job. Das genügt — beide
+ * laufen unabhängig von der App, und die App ist nur eine Leseansicht (lokal startbar, siehe
+ * README). Wer sie zusätzlich als Databricks App will: --with-app.
+ *
  * Schritte:
  *   1. Werkzeuge prüfen (Databricks CLI, Node ≥ 20)
  *   2. Lakebase-Projekt anlegen, falls nicht vorhanden (Branch „production", Endpoint „primary")
- *   3. Schema anlegen, Tabellen einspielen (Prisma), Spots eintragen
- *   4. App bauen (Next.js standalone) und Bundle deployen (App + Jobs)
- *   5. Dem App-Service-Principal Rechte auf das Schema geben
- *   6. Einen ersten Datenabruf starten und die App starten
+ *   3. Schema anlegen, Tabellen einspielen (Prisma), Spots + deren Konfiguration eintragen
+ *   4. Bundle deployen: Erfassungs-Job + Lern-Job (mit --with-app zusätzlich die App)
+ *   5. Nur mit --with-app: App bauen, Rechte für ihren Service Principal, App starten
+ *   6. Einen ersten Datenabruf und einen ersten Lernlauf starten
  *
  * Optionen:
  *   --profile <p>          Databricks-CLI-Profil (sonst DEFAULT)
- *   --target <t>           Bundle-Target (dev)
+ *   --target <t>           Bundle-Target (sonst dev, bzw. app bei --with-app)
  *   --project <id>         Lakebase-Projekt (windguru). Free Edition erlaubt nur EIN Projekt
  *                          je Account — hat der Account schon eins, dessen ID hier angeben.
  *   --data-only            nur Schritte 1–3 (Datenbank), kein Deploy
- *   --no-start             App deployen, aber nicht starten
+ *   --with-app             zusätzlich die Next.js-App als Databricks App deployen
+ *   --no-start             (nur mit --with-app) App deployen, aber nicht starten
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import pg from "pg";
@@ -34,7 +39,8 @@ const opt = (name, def) => {
 const flag = (name) => args.includes(`--${name}`);
 
 const PROFILE = opt("profile", process.env.DATABRICKS_CONFIG_PROFILE || "DEFAULT");
-const TARGET = opt("target", "dev");
+const WITH_APP = flag("with-app");
+const TARGET = opt("target", WITH_APP ? "app" : "dev");
 const PROJECT = opt("project", "windguru");
 const BRANCH = "production";
 const SCHEMA = "windguru"; // muss zu databricks.yml (lakebase_schema) und app.yaml passen
@@ -152,45 +158,58 @@ if (flag("data-only")) {
   process.exit(0);
 }
 
-// ── 4. Build + Deploy ───────────────────────────────────────────────────────────────────
-step(4, "App bauen und Bundle deployen (App + Datenerfassungs-Job + Start/Stopp-Jobs)");
-run("npm", ["run", "build:app"]);
-run("databricks", ["bundle", "deploy", "-t", TARGET, "-p", PROFILE, "--var", `lakebase_project=${PROJECT}`]);
+// ── 4. Deploy ───────────────────────────────────────────────────────────────────────────
+const deployVars = ["--var", `lakebase_project=${PROJECT}`];
+step(4, WITH_APP ? "App bauen und Bundle deployen (App + Jobs)" : "Bundle deployen (Erfassungs-Job + Lern-Job)");
+if (WITH_APP) run("npm", ["run", "build:app"]);
+run("databricks", ["bundle", "deploy", "-t", TARGET, "-p", PROFILE, ...deployVars]);
 ok("deployt");
 
-// ── 5. Rechte für den App-Service-Principal ─────────────────────────────────────────────
-step(5, "Datenbankrechte für den App-Service-Principal");
-const sp = dbx(["apps", "get", APP]).service_principal_client_id;
-if (!sp) die("App hat (noch) keinen Service Principal.");
-const grants = [
-  `GRANT USAGE, CREATE ON SCHEMA "${SCHEMA}" TO "${sp}"`,
-  `GRANT ALL ON ALL TABLES IN SCHEMA "${SCHEMA}" TO "${sp}"`,
-  `ALTER DEFAULT PRIVILEGES IN SCHEMA "${SCHEMA}" GRANT ALL ON TABLES TO "${sp}"`,
-];
-for (let i = 0; ; i++) {
-  try {
-    await sql(grants);
-    break;
-  } catch (e) {
-    // Die Postgres-Rolle des SP entsteht mit der App-Ressource; kurz nach dem Deploy ggf. noch nicht da.
-    if (i > 12) die(`Rechte setzen fehlgeschlagen: ${e.message}`);
-    console.log(`    Rolle ${sp} noch nicht da — warte …`);
-    await sleep(15000);
+// ── 5. Nur mit App: Rechte für ihren Service Principal ──────────────────────────────────
+if (WITH_APP) {
+  step(5, "Datenbankrechte für den App-Service-Principal");
+  const sp = dbx(["apps", "get", APP]).service_principal_client_id;
+  if (!sp) die("App hat (noch) keinen Service Principal.");
+  const grants = [
+    `GRANT USAGE, CREATE ON SCHEMA "${SCHEMA}" TO "${sp}"`,
+    `GRANT ALL ON ALL TABLES IN SCHEMA "${SCHEMA}" TO "${sp}"`,
+    `ALTER DEFAULT PRIVILEGES IN SCHEMA "${SCHEMA}" GRANT ALL ON TABLES TO "${sp}"`,
+  ];
+  for (let i = 0; ; i++) {
+    try {
+      await sql(grants);
+      break;
+    } catch (e) {
+      // Die Postgres-Rolle des SP entsteht mit der App-Ressource; kurz nach dem Deploy ggf. noch nicht da.
+      if (i > 12) die(`Rechte setzen fehlgeschlagen: ${e.message}`);
+      console.log(`    Rolle ${sp} noch nicht da — warte …`);
+      await sleep(15000);
+    }
   }
+  ok(`Rechte für ${sp} gesetzt`);
 }
-ok(`Rechte für ${sp} gesetzt`);
 
-// ── 6. Erster Datenabruf + App-Start ────────────────────────────────────────────────────
+// ── 6. Erster Datenabruf + erster Lernlauf ──────────────────────────────────────────────
 step(6, "Erster Datenabruf (Job) — dauert ~1–2 min");
-run("databricks", ["bundle", "run", "windguru_ingest", "-t", TARGET, "-p", PROFILE, "--var", `lakebase_project=${PROJECT}`]);
+run("databricks", ["bundle", "run", "windguru_ingest", "-t", TARGET, "-p", PROFILE, ...deployVars]);
 ok("Daten da");
+
+step(7, "Erster Lernlauf (Job)");
+run("databricks", ["bundle", "run", "windguru_skill", "-t", TARGET, "-p", PROFILE, ...deployVars]);
+ok("Güte und Nachkorrektur berechnet");
+
+if (!WITH_APP) {
+  console.log("\n\x1b[32m✓ Fertig.\x1b[0m Die Datenbasis läuft (Erfassung alle 30 min, Lernen stündlich).");
+  console.log("  Ansehen: lokal `npm run dev` gegen dieselbe DB (siehe README) — oder erneut mit --with-app deployen.");
+  process.exit(0);
+}
 
 if (flag("no-start")) {
   console.log("\n--no-start: App deployt, aber nicht gestartet. Start: databricks bundle run windguru -t " + TARGET);
   process.exit(0);
 }
-step(7, "App starten — dauert beim ersten Mal ~10–15 min (die CLI zeigt lange „Preparing source code“, das ist normal)");
-run("databricks", ["bundle", "run", APP, "-t", TARGET, "-p", PROFILE, "--var", `lakebase_project=${PROJECT}`]);
+step(8, "App starten — dauert beim ersten Mal ~10–15 min (die CLI zeigt lange „Preparing source code“, das ist normal)");
+run("databricks", ["bundle", "run", APP, "-t", TARGET, "-p", PROFILE, ...deployVars]);
 const url = dbx(["apps", "get", APP]).url;
 console.log(`\n\x1b[32m✓ Fertig.\x1b[0m App: ${url}`);
 console.log("  Tipp: Die Güte-/Korrektur-Statistik baut sich mit den Tagen auf (siehe /hilfe in der App).");

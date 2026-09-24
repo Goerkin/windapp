@@ -138,6 +138,7 @@ export default function VerificationPanel({ spot, unit }: { spot: SpotPayload; u
                 tickLine={{ stroke: PALETTE.axisLine }}
               />
               <ReferenceLine
+                className="ref-chrome"
                 segment={[{ x: 0, y: 0 }, { x: axMax, y: axMax }]}
                 stroke={PALETTE.axisLine}
                 strokeDasharray="4 4"

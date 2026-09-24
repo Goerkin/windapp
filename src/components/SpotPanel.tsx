@@ -3,20 +3,19 @@ import { useState } from "react";
 import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
 import { unitLabel } from "@/lib/units";
-import { ktColorHex } from "@/lib/palette";
+import { ktColor } from "@/lib/palette";
 import { ratingLabel, dirQuality, dirHint, DIR_LABEL, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { WindArrow, Compass, WaterTemps, fmtWind, relTime } from "./ui";
 import DailyStrip from "./DailyStrip";
 import ForecastChart from "./ForecastChart";
-import ModelPanel from "./ModelPanel";
 import TrendPanel from "./TrendPanel";
+import Link from "next/link";
 import DayDetail from "./DayDetail";
-import AccuracyPanel from "./AccuracyPanel";
 
 // Farben der gemessenen Stationen (identisch zu ForecastChart).
 const STATION_COLORS = ["#f472b6", "#fbbf24", "#34d399"];
 
-type Tab = "overview" | "day" | "analysis";
+type Tab = "overview" | "day";
 
 export default function SpotPanel({
   spot,
@@ -34,14 +33,13 @@ export default function SpotPanel({
   initialDay?: string | null;
 }) {
   const [tab, setTab] = useState<Tab>(initialDay ? "day" : "overview");
-  const [analysis, setAnalysis] = useState<"models" | "accuracy">("models");
   const [selectedDay, setSelectedDay] = useState<string | null>(initialDay ?? null);
   const openDay = (day: string) => {
     setSelectedDay(day);
     setTab("day");
   };
   const now = spot.now;
-  const toneColor = now ? ktColorHex(now.windspd) : "#64748b";
+  const toneColor = now ? ktColor(now.windspd) : "var(--wg-grey)";
   const dq = dirQuality(now?.winddir ?? null, spot.dirs);
   const hint = dirHint(now?.winddir ?? null, spot.dirs);
   const nc = spot.nowcast;
@@ -156,9 +154,11 @@ export default function SpotPanel({
             <TabButton active={tab === "day"} onClick={() => setTab("day")}>
               Tag
             </TabButton>
-            <TabButton active={tab === "analysis"} onClick={() => setTab("analysis")}>
-              Analyse
-            </TabButton>
+            {/* Modellvergleich und Güte-Rückschau liegen auf /analyse — sie beantworten eine
+                andere Frage als „wann kann ich fahren?" und lagen hier zu tief verschachtelt. */}
+            <Link href="/analyse" className="tab-btn ml-auto shrink-0" title="Modellvergleich und Güte-Rückschau">
+              Analyse ↗
+            </Link>
           </div>
 
           <div className="p-4 pt-3 sm:p-5 sm:pt-3">
@@ -185,22 +185,6 @@ export default function SpotPanel({
                 selectedDay={selectedDay}
                 onSelectDay={setSelectedDay}
               />
-            )}
-            {tab === "analysis" && (
-              <div>
-                <div className="seg mb-4" role="group" aria-label="Analyse">
-                  <button data-active={analysis === "models"} onClick={() => setAnalysis("models")}>
-                    Modelle
-                  </button>
-                  {(spot.verification || spot.stations.length > 0) && (
-                    <button data-active={analysis === "accuracy"} onClick={() => setAnalysis("accuracy")}>
-                      Genauigkeit
-                    </button>
-                  )}
-                </div>
-                {analysis === "models" && <ModelPanel spot={spot} unit={unit} />}
-                {analysis === "accuracy" && <AccuracyPanel spot={spot} unit={unit} />}
-              </div>
             )}
           </div>
         </>

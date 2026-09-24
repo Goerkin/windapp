@@ -7,16 +7,18 @@
     "dev": "next dev",
     "build:next": "next build --webpack",
     "start": "next start",
-    "lint": "eslint",
+    "build:app": "next build --webpack && node scripts/assemble-standalone.mjs",
+    "start:app": "node run-app.mjs",
+    "mirror": "node scripts/mirror-from-lakebase.mjs",
+    "skill": "python3 scripts/skill_job.py",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "seed": "node --env-file-if-exists=.env scripts/seed-spots.mjs",
-    "ingest": "node --env-file-if-exists=.env scripts/ingest.mjs",
-    "build:app": "next build --webpack && node scripts/assemble-standalone.mjs",
-    "start:app": "node run-app.mjs"
+    "lint": "eslint",
+    "test": "vitest run"
   },
   "prisma": {
     "seed": "node scripts/seed-spots.mjs"
@@ -37,9 +39,11 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.3.5",
+    "eslint-config-next": "^16.3.5",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }

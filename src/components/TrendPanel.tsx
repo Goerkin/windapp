@@ -38,7 +38,7 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
   // Ältere Läufe blasser (Reihenfolge: runs ist neu→alt).
   const runStyle = (ri: number) => {
     const frac = runs.length <= 1 ? 1 : ri / (runs.length - 1); // 0=neu, 1=alt
-    return { opacity: 0.55 - frac * 0.35, color: "#7c8bb0" };
+    return { opacity: 0.55 - frac * 0.35, color: "var(--color-faint)" };
   };
 
   return (
@@ -114,7 +114,7 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
             <span className="inline-block h-0.5 w-5 rounded" style={{ background: PALETTE.teal }} /> jetziger Stand
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-0.5 w-5 rounded bg-[#7c8bb0]" /> frühere Stände (blasser = älter)
+            <span className="inline-block h-0.5 w-5 rounded bg-faint" /> frühere Stände (blasser = älter)
           </span>
           {spot.trend.refFetchedAt && (
             <span>Historie zurück bis {relTime(spot.trend.refFetchedAt)}</span>

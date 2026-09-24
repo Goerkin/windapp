@@ -28,19 +28,30 @@ from urllib.parse import urlparse, unquote
 import requests
 import pg8000.dbapi as pgdb  # reiner Python-Postgres-Treiber (kein C, kein libpq/SSL-Konflikt)
 
-# ---- Konfiguration: Spots + Live-Stationen (spiegelt src/lib/spots.ts) ----
+# ---- Konfiguration: Spots + Live-Stationen + Wasser-Messstellen ----
+# Einzige Quelle ist config/spots.json (liest auch die App und scripts/seed-spots.mjs).
+# Als Databricks-Notebook gibt es kein __file__; das Arbeitsverzeichnis ist dort der Ordner
+# des Notebooks (…/files/scripts). Deshalb mehrere Kandidaten, SPOTS_FILE übersteuert.
+def _spots_file():
+    here = []
+    with contextlib.suppress(NameError):
+        here.append(os.path.dirname(os.path.abspath(__file__)))
+    cands = [os.environ.get("SPOTS_FILE")] + [
+        os.path.join(d, "..", "config", "spots.json") for d in here + [os.getcwd()]
+    ] + [os.path.join(os.getcwd(), "config", "spots.json")]
+    for c in cands:
+        if c and os.path.isfile(c):
+            return c
+    raise FileNotFoundError("config/spots.json nicht gefunden (gesucht: "
+                            + ", ".join(c for c in cands if c) + ")")
+
+
+with open(_spots_file(), encoding="utf-8") as _f:
+    _SPOT_DEFS = json.load(_f)["spots"]
 # source: "windguru" (id_station, Werte in kn) | "soarcast" (location_id, Werte in m/s→kn)
-SPOTS = [
-    {"id": 97, "stations": [
-        {"id": 521, "name": "Natural High", "source": "windguru"}]},          # Brouwersdam
-    {"id": 3642, "stations": [
-        {"id": 154, "name": "Mirns NKV", "source": "soarcast"}]},             # direkt am Spot
-]
-# Wassertemperatur-Messstellen von Rijkswaterstaat je Spot (spiegelt SpotDef.water in spots.ts).
-WATER = {
-    97: ["brouwershavensche.gat.08", "bommenede"],   # Nordsee vor dem Damm + Grevelingen
-    3642: ["friesekust.ijsselmeer"],                 # 3.4 km vor Mirns
-}
+SPOTS = [{"id": s["id"], "stations": s.get("stations", [])} for s in _SPOT_DEFS]
+# Wassertemperatur-Messstellen von Rijkswaterstaat je Spot (erste = Referenz).
+WATER = {s["id"]: [w["code"] for w in s.get("water", [])] for s in _SPOT_DEFS}
 RWS_LATEST = ("https://ddapi20-waterwebservices.rijkswaterstaat.nl/"
               "ONLINEWAARNEMINGENSERVICES/OphalenLaatsteWaarnemingen")
 SKIP_MODEL_IDS = {83}  # GFS-Wave: kein Wind

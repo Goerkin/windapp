@@ -139,6 +139,7 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
             midnights.map((m) => (
               <ReferenceLine
                 key={m.t}
+                className="ref-chrome"
                 x={m.t}
                 stroke={PALETTE.axisLine}
                 strokeDasharray="3 3"
@@ -170,7 +171,8 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
           <Line
             type="monotone"
             dataKey="consensus"
-            stroke="#ffffff"
+            className="line-consensus"
+            stroke={PALETTE.axis}
             strokeWidth={2.6}
             dot={false}
             isAnimationActive={false}
@@ -279,7 +281,7 @@ function DayBtn({
       className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-600 transition-colors"
       style={{
         borderColor: active ? "var(--color-accent)" : "var(--color-border)",
-        background: active ? "rgba(34,211,238,.06)" : "transparent",
+        background: active ? "var(--tint-accent)" : "transparent",
         color: active ? "var(--color-ink)" : "var(--color-muted)",
         cursor: "pointer",
       }}

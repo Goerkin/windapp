@@ -1,0 +1,42 @@
+# Lern-Job: rechnet aus der gesammelten Historie die Modellgüte und die Nachkorrektur neu
+# (scripts/skill_job.py → Tabellen "ModelSkill"/"SpotStat").
+#
+# Warum ein eigener Job und nicht (mehr) die App: bis Version 0.1 lief das Lernen in der
+# Next.js-App (src/instrumentation.ts → src/lib/skill.ts). Ist die App gestoppt oder gelöscht,
+# wächst die Datenbasis weiter, aber Güte und Korrektur frieren ein — genau das war passiert.
+# Jetzt gehört das Lernen zur Datenbasis; die App liest nur noch das Ergebnis und ist
+# vollständig entbehrlich.
+#
+# Warum nicht als zweiter Task im Erfassungs-Job: andere sinnvolle Taktung (stündlich statt
+# alle 30 min), und ein Fehler beim Lernen darf die Roh-Erfassung nicht anfassen. Getrennte
+# Jobs heisst getrennte Historie und getrennter Neuversuch.
+#
+# Taktung: stündlich zur Minute 10 — bewusst versetzt zu :00/:30, damit Erfassung und Lernen
+# nicht gleichzeitig auf derselben Lakebase-Verbindung sitzen.
+
+resources:
+  jobs:
+    windguru_skill:
+      name: "${var.app_name} — Lernen (stündlich)"
+      schedule:
+        quartz_cron_expression: "0 10 * * * ?"
+        timezone_id: UTC
+        pause_status: UNPAUSED
+      # numpy ist im Serverless-Environment vorinstalliert; pg8000 ist der reine
+      # Python-Treiber (psycopg2 crasht auf Serverless).
+      environments:
+        - environment_key: default
+          spec:
+            client: "3"
+            dependencies:
+              - pg8000
+
+      tasks:
+        - task_key: skill
+          environment_key: default
+          notebook_task:
+            notebook_path: ../scripts/skill_job.py
+            base_parameters:
+              LAKEBASE_SCHEMA: ${var.lakebase_schema}
+              LAKEBASE_PROJECT: ${var.lakebase_project}
+              LAKEBASE_BRANCH: ${var.lakebase_branch}

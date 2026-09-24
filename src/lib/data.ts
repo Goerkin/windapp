@@ -314,7 +314,10 @@ async function buildSpotPayload(spot: {
   const skill: SkillView[] = skillRows
     .map((r) => ({
       idModel: r.idModel,
-      label: r.label,
+      // Anzeigename immer aus MODEL_INFO (spots.ts), nicht aus der DB-Zeile: der Lern-Job
+      // kennt nur den Windguru-Rohnamen („ICON 7 km"), die Modell-Ansicht zeigt den
+      // ausgeschriebenen („ICON-EU 7 km"). Sonst stehen in zwei Ansichten zwei Namen.
+      label: modelInfo(r.idModel, r.resolution).label,
       category: modelInfo(r.idModel, r.resolution).category,
       resolution: r.resolution,
       mae: r.mae,
@@ -668,13 +671,37 @@ export async function loadStatus() {
         orderBy: { fetchedAt: "desc" },
         select: { fetchedAt: true },
       });
-      return { id: s.id, name: s.name, snapshots: count, lastFetch: last?.fetchedAt.toISOString() ?? null };
+      const stat = await prisma.spotStat.findUnique({
+        where: { spotId: s.id },
+        select: { updatedAt: true },
+      });
+      // Alter je Messstation: eine stumme Station ist der gefährlichste stille Fehler —
+      // die Prognose läuft weiter, aber alles Gelernte altert unbemerkt ein.
+      const stations = await Promise.all(
+        spotStationIds(s.id).map(async (stationId) => {
+          const obs = await prisma.stationObs.findFirst({
+            where: { spotId: s.id, stationId },
+            orderBy: { obsTime: "desc" },
+            select: { obsTime: true },
+          });
+          return { stationId, lastObs: obs?.obsTime.toISOString() ?? null };
+        }),
+      );
+      return {
+        id: s.id,
+        name: s.name,
+        snapshots: count,
+        lastFetch: last?.fetchedAt.toISOString() ?? null,
+        // Wann hat der Lern-Job (scripts/skill_job.py) hier zuletzt gerechnet?
+        lastLearned: stat?.updatedAt.toISOString() ?? null,
+        stations,
+      };
     }),
   );
   return {
-    pollEnabled: process.env.POLL_ENABLED !== "0",
-    intervalMin: Number(process.env.POLL_INTERVAL_MIN ?? 120),
-    retentionDays: Number(process.env.SNAPSHOT_RETENTION_DAYS ?? 0), // 0 = unbegrenzt
+    // Erfassung und Lernen laufen als Databricks-Jobs, nicht in dieser App — deshalb steht
+    // hier kein Poller-Zustand mehr, sondern das Alter dessen, was die Jobs geliefert haben.
+    writes: "databricks-jobs",
     spots: rows,
   };
 }

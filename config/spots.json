@@ -1,0 +1,50 @@
+{
+  "_readme": "EINZIGE Quelle der Spot-Stammdaten. Gelesen von src/lib/spots.ts (App), scripts/ingest_job.py (Erfassung) und scripts/seed-spots.mjs (schreibt Spot.stations/Spot.waterCodes für den Lern-Job). Nach einer Änderung: node scripts/setup.mjs --profile <p> --data-only (Seed + Job-Deploy). Felder: id = Windguru id_spot; dirs = Windrichtungs-Sektoren [von, bis] in Grad (Herkunft, im Uhrzeigersinn, 350→20 überquert Nord), good = on-/sideshore, ok = fahrbar mit Einschränkung; stations.source = windguru (id_station, kn) | soarcast (location_id, m/s); water = Rijkswaterstaat-Messstellen, die ERSTE ist die Referenz.",
+  "spots": [
+    {
+      "id": 97,
+      "slug": "brouwersdam",
+      "name": "Brouwersdam",
+      "region": "Zeeland · NL",
+      "sortOrder": 0,
+      "lat": 51.767,
+      "lon": 3.853,
+      "dirs": {
+        "note": "SW–NW: am Damm side-/side-onshore (W/NW ideal). S–O: fahrbar auf der Grevelingen-Seite bzw. im Hafenbereich. N–NO: nicht beschrieben → vorsichtig „bedingt“.",
+        "good": [[214, 326]],
+        "ok": [[326, 214]],
+        "hints": [
+          { "range": [304, 326], "text": "NW: am Damm onshore — besser am Ende der Promenade (Ouddorp)" },
+          { "range": [90, 214], "text": "S/O: Grevelingenmeer-Seite oder Hafenbereich nutzen" },
+          { "range": [326, 90], "text": "N/NO: ungeprüft — vor Ort einschätzen" }
+        ]
+      },
+      "stations": [{ "id": 521, "name": "Natural High", "source": "windguru" }],
+      "water": [
+        { "code": "brouwershavensche.gat.08", "name": "Nordsee", "note": "3.4 km vor dem Damm" },
+        { "code": "bommenede", "name": "Grevelingen", "note": "relevant bei S/O-Wind" }
+      ]
+    },
+    {
+      "id": 3642,
+      "slug": "mirns",
+      "name": "Mirns",
+      "region": "Friesland · IJsselmeer · NL",
+      "sortOrder": 1,
+      "lat": 52.853,
+      "lon": 5.473,
+      "dirs": {
+        "note": "SO/S/SW optimal (konstant, on-/sideshore), W/WNW gut (Freeride). O fahrbar, aber ablandig und oft wenig Wasser am Ufer. N-Sektor (NNW–NO) ablandig/böig → vermeiden. NW ist nicht beschrieben → Übergang, „bedingt“.",
+        "good": [[124, 304]],
+        "ok": [[56, 124], [304, 326]],
+        "hints": [
+          { "range": [56, 124], "text": "O: ablandig, oft wenig Wasser am Ufer" },
+          { "range": [304, 326], "text": "NW: Übergang zum Nord-Sektor — vorsichtig" },
+          { "range": [326, 56], "text": "Nord: ablandig & unbeständig — fatal für den Einstieg" }
+        ]
+      },
+      "stations": [{ "id": 154, "name": "Mirns NKV", "source": "soarcast", "note": "misst direkt am Spot — Referenzmessung für Bewertung/Skill" }],
+      "water": [{ "code": "friesekust.ijsselmeer", "name": "IJsselmeer", "note": "3.4 km vor Mirns" }]
+    }
+  ]
+}

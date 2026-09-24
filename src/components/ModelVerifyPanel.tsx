@@ -105,7 +105,7 @@ export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; un
               className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-600 transition-colors"
               style={{
                 borderColor: d.day === day ? "var(--color-accent)" : "var(--color-border)",
-                background: d.day === day ? "rgba(34,211,238,.06)" : "transparent",
+                background: d.day === day ? "var(--tint-accent)" : "transparent",
                 color: d.day === day ? "var(--color-ink)" : "var(--color-muted)",
                 cursor: "pointer",
               }}
@@ -181,7 +181,8 @@ export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; un
               <Line
                 type="monotone"
                 dataKey="consensus"
-                stroke="#ffffff"
+                className="line-consensus"
+            stroke={PALETTE.axis}
                 strokeWidth={2}
                 strokeDasharray="5 3"
                 dot={false}

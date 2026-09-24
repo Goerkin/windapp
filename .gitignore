@@ -22,3 +22,6 @@
 .DS_Store
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# python
+__pycache__/

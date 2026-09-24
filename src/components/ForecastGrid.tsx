@@ -155,7 +155,7 @@ export default function ForecastGrid({
                   >
                     <div
                       className="flex items-center gap-1 whitespace-nowrap text-[10px] font-600"
-                      style={{ color: we ? "#fde68a" : "var(--color-ink)" }}
+                      style={{ color: we ? "var(--wg-amber)" : "var(--color-ink)" }}
                     >
                       {g.d.label.replace(/\.$/, "")}
                       {tr && <span style={{ color: TREND_COLOR[tr.state] }}>{TREND_SYM[tr.state]}</span>}
@@ -208,7 +208,7 @@ export default function ForecastGrid({
             (h) => {
               const p = h.pMin == null ? null : Math.round(h.pMin * 100);
               return (
-                <span style={{ color: p == null ? undefined : p >= 70 ? "#34d399" : p >= 45 ? "#fbbf24" : "#6b7590" }}>
+                <span style={{ color: p == null ? undefined : p >= 70 ? "var(--wg-green)" : p >= 45 ? "var(--wg-amber)" : "var(--color-faint)" }}>
                   {p ?? "–"}
                 </span>
               );

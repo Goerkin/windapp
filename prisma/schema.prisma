@@ -27,6 +27,15 @@ model Spot {
   lat       Float?
   lon       Float?
   sortOrder Int          @default(0)
+
+  // Laufzeit-Konfiguration für Auswertungen, die OHNE die Next.js-App laufen (der
+  // Lern-Job scripts/skill_job.py). Gespiegelt aus src/lib/spots.ts durch
+  // scripts/seed-spots.mjs — damit die Python-Seite keine eigene Spot-Tabelle braucht.
+  //   stations   = [{ id, name, source }]  — die AKTUELL gültigen Messstationen
+  //   waterCodes = ["code", …]             — Rijkswaterstaat-Stellen, die ERSTE ist Referenz
+  stations   Json?
+  waterCodes Json?
+
   snapshots Snapshot[]
   stationObs StationObs[]
   updatedAt DateTime     @updatedAt
