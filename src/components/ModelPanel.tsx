@@ -28,8 +28,22 @@ const CAT_COLOR: Record<string, string> = {
   global: "#f59e0b",
 };
 
+/**
+ * Welche Modellwerte die Linien zeigen. Standard ist „korrigiert": nur so liegt der
+ * Konsens auch dort, wo die Modelllinien liegen — er IST ihr gewichtetes Mittel. Mit den
+ * Rohwerten sieht er systematisch daneben aus (an der Brouwersdam ~2 kn tiefer).
+ */
+type View = "adj" | "raw" | "both";
+const VIEW_LABEL: Record<View, string> = { adj: "korrigiert", raw: "roh", both: "beide" };
+
+/** Modellwert an Stunde i — korrigiert, wenn vorhanden und gewünscht. */
+function pick(m: { wind: (number | null)[]; windAdj?: (number | null)[] }, i: number, view: View) {
+  return view === "raw" ? m.wind[i] : m.windAdj?.[i] ?? m.wind[i];
+}
+
 export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: WindUnit }) {
   const [count, setCount] = useState(6);
+  const [view, setView] = useState<View>("adj");
   // Tages-Fokus: null = die nächsten 3 Tage am Stück; sonst genau dieser Tag.
   const [dayFilter, setDayFilter] = useState<string | null>(null);
   const days = spot.trend.daily.slice(0, 16);
@@ -64,8 +78,23 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
       const cp = spot.points[i];
       row.consensus = convertWind(cp?.windspd ?? null, unit);
       topModels.forEach((m) => {
-        row[`m${m.idModel}`] = convertWind(m.wind[i] ?? null, unit);
+        row[`m${m.idModel}`] = convertWind(pick(m, i, view) ?? null, unit);
+        if (view === "both") row[`m${m.idModel}_raw`] = convertWind(m.wind[i] ?? null, unit);
       });
+      // Konsens OHNE Nachkorrektur — bewusst mit denselben Stundengewichten wie der echte
+      // Konsens, damit der Abstand allein die Korrektur zeigt und nicht die Gewichtung.
+      if (view !== "adj") {
+        let num = 0;
+        let den = 0;
+        for (const m of spot.models) {
+          const w = m.wh?.[i];
+          const raw = m.wind[i];
+          if (w == null || raw == null) continue;
+          num += w * raw;
+          den += w;
+        }
+        row.consensusRaw = den > 0 ? convertWind(num / den, unit) : null;
+      }
       return row;
     });
 
@@ -81,7 +110,7 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
       }
     }
     return { data, midnights };
-  }, [spot.gridTimes, spot.points, topModels, unit, dayFilter]);
+  }, [spot.gridTimes, spot.points, spot.models, topModels, unit, dayFilter, view]);
 
   const nowSec = Date.now() / 1000;
 
@@ -99,19 +128,47 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
         ))}
       </div>
 
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-muted">
           Alle Modelle vs. Konsens · Wind ({unitLabel(unit)}) ·{" "}
           {dayFilter ? days.find((d) => d.day === dayFilter)?.label ?? "Tag" : "nächste 3 Tage"}
         </span>
-        <div className="seg">
-          {[4, 6, 10].map((c) => (
-            <button key={c} data-active={count === c} onClick={() => setCount(c)}>
-              Top {c}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="seg" role="group" aria-label="Modellwerte">
+            {(["adj", "raw", "both"] as View[]).map((v) => (
+              <button
+                key={v}
+                data-active={view === v}
+                onClick={() => setView(v)}
+                title={
+                  v === "adj"
+                    ? "Nachkorrigiert — so geht der Wert in den Konsens ein"
+                    : v === "raw"
+                      ? "Rohwerte, wie Windguru sie liefert"
+                      : "Beides: korrigiert durchgezogen, roh gestrichelt"
+                }
+              >
+                {VIEW_LABEL[v]}
+              </button>
+            ))}
+          </div>
+          <div className="seg">
+            {[4, 6, 10].map((c) => (
+              <button key={c} data-active={count === c} onClick={() => setCount(c)}>
+                Top {c}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      <p className="mb-2 text-[11px] text-faint">
+        {view === "adj"
+          ? "Modellwerte nach der gelernten Nachkorrektur — der Konsens ist ihr gewichtetes Mittel."
+          : view === "raw"
+            ? "Rohe Modellwerte von Windguru. Die gestrichelte Linie ist der Mix daraus, die durchgezogene der korrigierte Konsens — ihr Abstand ist das, was die Nachkorrektur beiträgt."
+            : "Durchgezogen korrigiert, gestrichelt roh. Der Abstand ist der gelernte Fehler des jeweiligen Modells."}
+      </p>
 
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ top: 22, right: 6, bottom: 4, left: -18 }}>
@@ -168,6 +225,38 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
               />
             ) : null,
           )}
+          {/* „beide": dieselbe Farbe gestrichelt und dünner — der Abstand ist die Korrektur. */}
+          {view === "both" &&
+            topModels.map((m, i) =>
+              isShown(m.idModel) ? (
+                <Line
+                  key={`${m.idModel}-raw`}
+                  type="monotone"
+                  dataKey={`m${m.idModel}_raw`}
+                  stroke={MODEL_COLORS[i % MODEL_COLORS.length]}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls
+                  opacity={0.6}
+                />
+              ) : null,
+            )}
+          {view !== "adj" && (
+            <Line
+              type="monotone"
+              dataKey="consensusRaw"
+              className="line-consensus"
+              stroke={PALETTE.axis}
+              strokeWidth={1.6}
+              strokeDasharray="5 4"
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+              opacity={0.55}
+            />
+          )}
           <Line
             type="monotone"
             dataKey="consensus"
@@ -178,15 +267,24 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
             isAnimationActive={false}
             connectNulls
           />
-          <Tooltip content={<ModelTooltip models={shownModels} unit={unit} />} />
+          <Tooltip content={<ModelTooltip models={shownModels} unit={unit} view={view} />} />
         </LineChart>
       </ResponsiveContainer>
 
       {/* Legende — Modelle anklickbar: nur das/die Gewählte(n) zeigen. */}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
         <span className="flex items-center gap-1.5 text-body">
-          <span className="inline-block h-0.5 w-5 rounded bg-white" /> Konsens
+          <span className="inline-block h-0.5 w-5 rounded bg-ink" /> Konsens
         </span>
+        {view !== "adj" && (
+          <span className="flex items-center gap-1.5 text-muted" title="Derselbe Mix ohne die gelernte Nachkorrektur">
+            <span
+              className="inline-block h-0 w-5 border-t border-dashed border-ink opacity-60"
+              aria-hidden
+            />{" "}
+            Konsens ohne Korrektur
+          </span>
+        )}
         {topModels.map((m, i) => {
           const active = isShown(m.idModel);
           return (
@@ -296,11 +394,13 @@ function ModelTooltip({
   payload,
   models,
   unit,
+  view,
 }: {
   active?: boolean;
   payload?: Array<{ payload: Record<string, number | null> }>;
   models: { idModel: number; label: string }[];
   unit: WindUnit;
+  view: View;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
@@ -317,10 +417,16 @@ function ModelTooltip({
       <div className="mb-1 font-600 text-ink">{when}</div>
       <div className="text-body">
         Konsens <span className="font-mono text-ink">{fmt(row.consensus)}</span> {unitLabel(unit)}
+        {view !== "adj" && row.consensusRaw != null && (
+          <span className="text-muted"> · ohne Korrektur {fmt(row.consensusRaw)}</span>
+        )}
       </div>
       {models.map((m) => (
         <div key={m.idModel} className="text-muted">
           {m.label}: <span className="font-mono">{fmt(row[`m${m.idModel}`])}</span>
+          {view === "both" && row[`m${m.idModel}_raw`] != null && (
+            <span className="text-faint"> (roh {fmt(row[`m${m.idModel}_raw`])})</span>
+          )}
         </div>
       ))}
     </div>
