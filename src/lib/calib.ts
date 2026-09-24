@@ -32,6 +32,31 @@ export const DEFAULT_VARIANT = "add_skill";
 export const variantOf = (key: string | undefined): Variant =>
   VARIANTS.find((v) => v.key === key) ?? VARIANTS.find((v) => v.key === DEFAULT_VARIANT)!;
 
+/**
+ * Stellschrauben des Lern-Jobs, gespiegelt aus scripts/skill_job.py — nur zur ANZEIGE (die
+ * Hilfe-Seite erklärt damit den Rechenweg). Gerechnet wird mit den Python-Werten;
+ * tests/learn-config.test.ts prüft, dass beide übereinstimmen.
+ */
+export const LEARN = {
+  windowDays: 90, // Lernfenster (SKILL_WINDOW_DAYS)
+  halfLifeDays: 14, // Recency-Halbwertszeit (SKILL_HALFLIFE_DAYS)
+  autocorrH: 3, // Stundenfehler ~3 h korreliert → effektive Stichprobe = Stunden / 3
+  runSpacingH: 6, // je Modell höchstens ein Lauf pro 6 h
+  horizonH: 240, // Fehler-Stichproben bis 10 Tage Vorlauf
+  sigmaPriorN: 8, // Pseudo-Stunden des Auflösungs-Priors beim Restfehler
+  verifMaxSnaps: 200, // höchstens so viele Prüf-Zeitpunkte (SKILL_MAX_SNAPS)
+  verifMinHistoryD: 3, // erst prüfen, wenn davor ≥ 3 Tage gelernt werden konnte
+  verifTolKn: 3, // „Treffer" = höchstens so weit daneben
+  verifLeads: [6, 12, 24, 48],
+  selectMinN: 120, // Vergleiche @24 h, bevor die Daten die Variante wählen
+  selectTolKn: 0.05,
+  probMinN: 400, // Vergleiche, bevor die Wahrscheinlichkeit kalibriert wird
+  sigmaScales: [0.8, 1.0, 1.25, 1.5],
+  nowcastK: 8, // Kurzfrist-Korrektur wirkt höchstens so viele Stunden
+  nowcastPriorTau: 3, // Standard-Abklingen e^(−k/3)
+  nowcastPriorN: 5, // Pseudo-Paare für dieses Standard-Abklingen
+} as const;
+
 // ── Vorlauf-Stufen ───────────────────────────────────────────────────────────────────────
 /** 0–24 h, 24–48 h, 48–72 h, > 72 h — Güte und Korrektur werden je Stufe getrennt gelernt. */
 export const LEAD_BUCKETS = 4;

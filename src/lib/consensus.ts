@@ -62,7 +62,7 @@ export type ConsensusOpts = {
   probAt?: number; // Schwelle (kn) für pAbove/pFrac
 };
 
-const HORIZON_H = 384; // 16 Tage (GFS reicht so weit, ECMWF 15 T — danach nur noch global)
+export const HORIZON_H = 384; // 16 Tage (GFS reicht so weit, ECMWF 15 T — danach nur noch global)
 
 /** Eine Modell-Stunde: roh interpoliert + korrigiert + Gewicht + Restfehler. */
 type Contrib = { raw: number; wind: number; shift: number; w: number; sigma: number; dir: number | null };

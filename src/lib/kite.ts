@@ -75,7 +75,7 @@ export const DIR_LABEL: Record<DirQuality, string> = {
 
 // Dreht der Wind um mehr als so viel Grad gegenüber der Messstunde, gilt die Lage als
 // umgestellt (Front/Seebrise) — die aktuelle Abweichung sagt dann nichts mehr aus.
-const FRONT_TURN_DEG = 60;
+export const FRONT_TURN_DEG = 60;
 
 /**
  * Zeitpunkt, ab dem die Kurzfrist-Korrektur nicht mehr gilt: erste Prognosestunde nach der

@@ -5,16 +5,19 @@ abrufbar über Windguru), **korrigiert jedes Modell anhand der echten Messstatio
 mischt sie nach nachgewiesener Treffsicherheit und zeigt, **wann man wo fahren kann** — mit
 kalibrierter Wahrscheinlichkeit.
 
+**Live: <https://windapp-five.vercel.app>**
+
 Erfassung **und** Lernen laufen als Databricks-Jobs, unabhängig von jeder Oberfläche. Die
-Next.js-App ist eine reine Leseansicht: lokal startbar, optional als Databricks App
-deploybar, jederzeit löschbar — die Datenbasis lernt weiter.
+Next.js-App ist eine reine Leseansicht (gehostet auf Vercel, optional als Databricks App) und
+jederzeit entbehrlich — die Datenbasis lernt weiter.
 
 - **Übersicht**: beide Spots, Wind jetzt (gemessen), gemessene Wassertemperatur, nächste
   Fahrfenster und ein Windguru-artiges Kachel-Raster bis zum übernächsten Wochenende
 - **Verlauf**: Konsens-Prognose, Böen, Messung, Prognose von vor 24 h, Kurzfrist-Korrektur,
   Fahrfenster, Wahrscheinlichkeit je Stunde
 - **Analyse** (`/analyse`): alle Einzelmodelle, Modell-Güte, ehrliche Rückschau, Kalibrierung
-- **Hilfe** (`/hilfe`): erklärt Anzeige und Rechenweg schematisch
+- **Hilfe** (`/hilfe`): erklärt die Anzeige und den kompletten Rechenweg mit Formeln — der
+  beste Einstieg, um zu verstehen, wie die Zahlen entstehen
 
 Helles und dunkles Thema folgen der System-Einstellung.
 
@@ -36,8 +39,8 @@ Das Skript ist idempotent (bei Fehlern einfach erneut starten): Lakebase-Datenba
 Tabellen + Spots einspielen, Bundle deployen (Erfassungs-Job + Lern-Job), ersten Datenabruf
 und ersten Lernlauf starten.
 
-Die Oberfläche ist **nicht** Teil davon. Ansehen geht lokal (siehe unten) — oder, wenn sie als
-Databricks App laufen soll:
+Die Oberfläche ist **nicht** Teil davon — sie läuft auf Vercel (siehe unten). Alternativ als
+Databricks App:
 
 ```bash
 node scripts/setup.mjs --profile wind --with-app   # baut, deployt und startet die App
@@ -62,42 +65,44 @@ letzten Abrufs, stumme Messstationen, Alter der Wassertemperatur).
 
 Details, Pausieren/Löschen ohne Datenverlust, Troubleshooting: **[DATABRICKS.md](DATABRICKS.md)**.
 
-## Lokal entwickeln
+## Oberfläche auf Vercel
 
-```bash
-docker run -d --name windguru-pg -e POSTGRES_USER=windguru -e POSTGRES_PASSWORD=windguru \
-  -e POSTGRES_DB=windguru -p 5433:5432 postgres:16
-cp .env.example .env            # DATABASE_URL auf die Docker-Postgres
-npm install
-npx prisma db push && npm run seed
-npm run dev                     # http://localhost:3000
-```
+Das GitHub-Repo ist mit Vercel verbunden: **jeder Push auf `master` geht direkt live**, Pull
+Requests bekommen eine Preview-URL. Die Region steht in [vercel.json](vercel.json) auf `cle1`
+(Cleveland), direkt neben der Lakebase in `us-east-2` — sonst kostet jede Abfrage den Weg über
+den Atlantik.
 
-Die App holt selbst keine Daten. Zwei Wege zu Inhalt:
+Die App liest Lakebase über einen **eigenen Service Principal mit reinen Leserechten**
+(`USAGE` auf das Schema, `SELECT` auf alle Tabellen plus `ALTER DEFAULT PRIVILEGES … GRANT
+SELECT`, damit auch künftige Tabellen lesbar sind). Schreiben kann sie nicht — es gibt nur einen
+Schreibpfad, die Jobs.
 
-```bash
-# a) die echten Databricks-Daten herunterspiegeln (empfohlen, überschreibt die lokale DB)
-export DATABRICKS_HOST=https://<dein-workspace>.cloud.databricks.com
-export DATABRICKS_TOKEN="$(databricks auth token -p wind | jq -r .access_token)"
-export PGUSER=<deine-anmeldung>   # E-Mail des Databricks-Kontos
-TARGET_URL=postgresql://windguru:windguru@localhost:5433/windguru npm run mirror
+Umgebungsvariablen in Vercel (Production):
 
-# b) lokal selbst erfassen und lernen (braucht python3 mit numpy + pg8000)
-pip install numpy pg8000
-DATABASE_URL=postgresql://windguru:windguru@localhost:5433/windguru LAKEBASE_SCHEMA=public \
-  python3 scripts/ingest_job.py
-DATABASE_URL=postgresql://windguru:windguru@localhost:5433/windguru LAKEBASE_SCHEMA=public \
-  python3 scripts/skill_job.py
-```
+| Variable | Wert |
+|---|---|
+| `WIND_DB` | `lakebase` |
+| `DATABRICKS_HOST` | Workspace-URL |
+| `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | OAuth-Secret des Lese-Service-Principals |
+| `PGHOST` / `PGDATABASE` | Host des Lakebase-Endpoints / Datenbankname (Standard `databricks_postgres`) |
+| `LAKEBASE_PROJECT` / `LAKEBASE_BRANCH` / `LAKEBASE_SCHEMA` | z. B. `windguru` / `production` / `windguru` |
 
-`npx tsc --noEmit` prüft die Typen, `npm run lint` die Regeln.
+> Das OAuth-Secret eines Service Principals läuft ab (hier: **23.09.2028**). Dann ein neues
+> Secret erzeugen und in Vercel eintragen, sonst zeigt die Seite nur noch Verbindungsfehler.
+
+## Qualitätssicherung
+
+[CI](.github/workflows/ci.yml) (GitHub Actions) prüft jeden Push und Pull Request:
+Typprüfung, Lint, Tests und Syntax der Python-Jobs. Die Tests decken vor allem ab, dass Lernen
+(Python) und Anwenden (TypeScript) dieselbe Mathematik rechnen — sie liegt bewusst doppelt vor,
+siehe [CLAUDE.md](CLAUDE.md). Lokal: `npm test` (braucht `python3` mit numpy).
 
 ## Wie es funktioniert (kurz)
 
 1. **Daten**: Windguru hat keine offizielle API; die interne `iapi.php` liefert JSON, wenn ein
    `Referer` auf die Spot-Seite mitgeht — alles in [scripts/ingest_job.py](scripts/ingest_job.py).
    Messstationen: Natural High (Windguru) und Mirns NKV (soarcast). Wassertemperatur:
-   Rijkswaterstaat WaterWebservices.
+   Rijkswaterstaat (DDAPI20).
 2. **Nachkorrektur** je Modell × Vorlauf-Stufe als Ridge-Regression gegen die Messung,
    **gelernt und ehrlich rollierend geprüft** in [scripts/skill_job.py](scripts/skill_job.py)
    (nur Daten VOR dem jeweiligen Prognosezeitpunkt); die Daten wählen zwischen 6 Varianten.
@@ -107,6 +112,9 @@ DATABASE_URL=postgresql://windguru:windguru@localhost:5433/windguru LAKEBASE_SCH
 4. **Kite-Logik** (Richtungen je Spot, Tageslicht, Wahrscheinlichkeit, Fahrfenster):
    [src/lib/kite.ts](src/lib/kite.ts), Spot-Stammdaten in [config/spots.json](config/spots.json).
 
+Ausführlich — mit Formeln, Beispielen und den echten Stellschrauben — auf der
+[Hilfe-Seite](https://windapp-five.vercel.app/hilfe).
+
 ## Eigene Spots
 
 Spots stehen an genau einer Stelle: [config/spots.json](config/spots.json) (Windguru-ID,
@@ -114,12 +122,11 @@ Koordinaten, Windrichtungen, Messstationen, Wassertemperatur-Messstellen). App, 
 und Seed lesen alle diese Datei. Danach `npm test` (prüft die Form) und
 `node scripts/setup.mjs --profile <p> --data-only` (Seed + Job-Deploy).
 
-## Konfiguration (Env)
+## Konfiguration der Jobs (Env)
 
 | Variable | Zweck | Standard |
 |---|---|---|
-| `DATABASE_URL` | Postgres (App und lokale Job-Läufe) | – |
-| `LAKEBASE_SCHEMA` | Postgres-Schema (lokal `public`, auf Databricks `windguru`) | `windguru` |
+| `LAKEBASE_SCHEMA` | Postgres-Schema | `windguru` |
 | `SNAPSHOT_RETENTION_DAYS` | Aufbewahrung in Tagen, nur im Erfassungs-Job (`0` = unbegrenzt) | `0` |
 | `THIN_AFTER_DAYS` / `THIN_KEEP_H` | Verdichtung älterer Datenstände | `21` / `6` |
 | `SKILL_WINDOW_DAYS` | Lernfenster des Lern-Jobs | `90` |

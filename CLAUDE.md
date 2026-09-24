@@ -63,13 +63,25 @@ Portieren zugeschlagen haben (der Test fängt beide): `np.round` rundet halbe zu
 genauso. Für Vergleiche eines ganzen Lernlaufs gegen ein gespeichertes Ergebnis nageln
 `SKILL_NOW`, `SKILL_WINDOW_DAYS`, `SKILL_HALFLIFE_DAYS` und `SKILL_MAX_SNAPS` ihn fest.
 
+Die **Hilfe-Seite** erklärt den Rechenweg mit den echten Stellschrauben: TS-Werte importiert
+sie direkt, die des Lern-Jobs spiegelt `LEARN` in `calib.ts`. `tests/learn-config.test.ts`
+bricht, wenn eine Konstante in `skill_job.py` geändert wird, ohne `LEARN` nachzuziehen — dann
+auch den Text der Hilfe prüfen.
+
+**Deploy**: Das Repo ist mit Vercel verbunden — ein Push auf `master` geht sofort live. CI
+(`.github/workflows/ci.yml`) prüft tsc, Lint, Tests und die Python-Jobs.
+
+Lokal: Docker-Postgres `windguru-pg` (Port 5433, `.env`), `npx prisma db push && npm run seed`,
+Daten per `npm run mirror` (braucht `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `PGUSER`,
+`TARGET_URL`) oder die Jobs lokal mit `DATABASE_URL=… LAKEBASE_SCHEMA=public python3 scripts/…`.
+
 ## Befehle
 
 ```bash
 npx tsc --noEmit                 # Typprüfung
 npm test                         # Parity Python↔TS + Spot-Konfiguration (braucht python3 + numpy)
-npm run lint                     # 0 Fehler erwartet (12 bekannte Warnungen, s. eslint.config.mjs)
-npm run dev                      # lokal gegen Docker-Postgres (siehe README)
+npm run lint                     # 0 Fehler erwartet (13 bekannte Warnungen, s. eslint.config.mjs)
+npm run dev                      # lokal gegen Docker-Postgres windguru-pg auf Port 5433 (.env)
 npm run mirror                   # echte Lakebase-Daten nach lokal spiegeln (nur Lesen → Schreiben lokal)
 npm run build:app                # Standalone-Build, nur für das Target „app" nötig
 
