@@ -10,6 +10,12 @@ const nextConfig: NextConfig = {
 
   // Der Hintergrund-Poller läuft im Node-Server (instrumentation.ts). instrumentationHook
   // ist in Next 16 Standard; hier nur dokumentiert, dass wir darauf bauen.
+  // Prisma (engineType "client") lädt query_compiler_bg.wasm zur Laufzeit über einen Pfad,
+  // nicht per import — ohne diesen Eintrag fehlt sie im Funktionspaket (Vercel: ENOENT).
+  // '/**' statt '/*', damit auch verschachtelte Routen wie /api/dashboard erfasst werden.
+  outputFileTracingIncludes: {
+    "/**": ["./node_modules/.prisma/client/*.wasm"],
+  },
   outputFileTracingExcludes: {
     "*": [
       "node_modules/@img/**",
