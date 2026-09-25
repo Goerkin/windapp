@@ -5,11 +5,12 @@ import type { WindUnit } from "@/lib/units";
 import ModelPanel from "./ModelPanel";
 import AccuracyPanel from "./AccuracyPanel";
 import { relTime } from "./ui";
+import { useUnit } from "./useUnit";
 
 /** Spot- und Themenwahl für die Analyse-Route. Reine Auswahl — die Panels sind unverändert. */
 export default function AnalysisView({ spots }: { spots: SpotPayload[] }) {
   const [spotId, setSpotId] = useState<number>(spots[0].id);
-  const [unit, setUnit] = useState<WindUnit>("kn");
+  const [unit, setUnit] = useUnit(); // dieselbe gemerkte Einheit wie im Cockpit
   const [view, setView] = useState<"models" | "accuracy">("models");
   const spot = spots.find((s) => s.id === spotId) ?? spots[0];
 

@@ -8,6 +8,7 @@ import { variantOf, priorSigma, LEAD_LABELS, LEAD_BUCKETS, MAX_CORR_KN, type Spo
 import { modelInfo, SPOTS, spotStationIds } from "./spots";
 import { topKMean } from "./units";
 import { sunTimes, isDaylight } from "./sun";
+import { fmtDay } from "./dates";
 import type {
   ModelView,
   SkillView,
@@ -106,11 +107,7 @@ function toSeriesInput(m: DbModel): SeriesInput {
   };
 }
 
-const dowFmt = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit" });
-
-function dayLabel(sec: number): string {
-  return dowFmt.format(new Date(sec * 1000)).replace(",", "");
-}
+const dayLabel = fmtDay; // „Sa 26.9." — dieselbe Schreibweise wie überall im Client
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
 

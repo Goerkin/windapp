@@ -2,9 +2,8 @@
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
 import { TH, nowcastCutoff, nowcastOffsetAt, probAtLeast } from "@/lib/kite";
+import { fmtDayTime } from "@/lib/dates";
 
-const TZ = "Europe/Amsterdam";
-const whenFmt = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 /**
  * „Wie entsteht der Wert?" — die Rechnung einer einzelnen Konsens-Stunde zum Nachprüfen:
@@ -52,7 +51,7 @@ export default function HourBreakdown({
     <div>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs uppercase tracking-wider text-muted">
-          Wie entsteht der Wert für <span className="text-ink">{whenFmt.format(new Date(t * 1000))}</span>?
+          Wie entsteht der Wert für <span className="text-ink">{fmtDayTime(t)}</span>?
         </div>
         <div className="seg" role="group" aria-label="Stunde wechseln">
           <button onClick={() => onStep(-1)} disabled={index <= 0} aria-label="eine Stunde früher">
@@ -178,7 +177,7 @@ export default function HourBreakdown({
           {missing
             .map((m) =>
               m.coverEnd != null && m.coverEnd < t
-                ? `${m.label} (reicht bis ${whenFmt.format(new Date(m.coverEnd * 1000))})`
+                ? `${m.label} (reicht bis ${fmtDayTime(m.coverEnd)})`
                 : `${m.label} (Lauf beginnt später)`,
             )
             .join(" · ")}

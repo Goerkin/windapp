@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, compass, topKMean, type WindUnit } from "@/lib/units";
-import { PALETTE, ktColor } from "@/lib/palette";
+import { PALETTE, SERIES, SERIES_CLASS, SERIES_FALLBACK, ktColor } from "@/lib/palette";
 import { DIR_LABEL, MIN_WINDOW_H, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { WindArrow, DeltaBadge, WindowLine, TrendMark, fmtTime, hourOf, windBands } from "./ui";
 
@@ -224,9 +224,27 @@ export default function DayDetail({
           {summary?.windows.map((w) => (
             <ReferenceArea key={w.start} x1={w.start} x2={w.end - 3600} fill={PALETTE.green} fillOpacity={0.12} stroke="none" ifOverflow="hidden" />
           ))}
-          <ReferenceLine y={convertWind(th.min, unit) ?? undefined} stroke={PALETTE.green} strokeOpacity={0.45} strokeDasharray="6 4" />
-          <Line type="monotone" dataKey="gust" stroke={PALETTE.gust} strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-          <Line type="monotone" dataKey="wind" stroke={PALETTE.teal} strokeWidth={2.4} isAnimationActive={false} dot={<DirDot />} activeDot={{ r: 4 }} />
+          <ReferenceLine y={convertWind(th.min, unit) ?? undefined} className="ref-min" stroke={PALETTE.teal} strokeOpacity={0.6} strokeDasharray="6 4" />
+          <Line
+            type="monotone"
+            dataKey="gust"
+            className={SERIES_CLASS.gust}
+            stroke={SERIES_FALLBACK.gust}
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+            dot={false}
+            isAnimationActive={false}
+          />
+          <Line
+            type="monotone"
+            dataKey="wind"
+            className={SERIES_CLASS.wind}
+            stroke={SERIES_FALLBACK.wind}
+            strokeWidth={2.4}
+            isAnimationActive={false}
+            dot={<DirDot />}
+            activeDot={{ r: 4, style: { fill: SERIES.wind } }}
+          />
           <Tooltip content={<DayTooltip unit={unit} />} />
         </ComposedChart>
       </ResponsiveContainer>
@@ -267,7 +285,8 @@ export default function DayDetail({
                     {ev?.dirQ && ev.dirQ !== "good" && (
                       <span
                         title={DIR_LABEL[ev.dirQ]}
-                        style={{ color: ev.dirQ === "bad" ? "var(--wg-red)" : "var(--wg-amber)" }}
+                        className="font-700"
+                        style={{ color: ev.dirQ === "bad" ? "var(--wg-red)" : "var(--color-ink)" }}
                       >
                         {ev.dirQ === "bad" ? "✕" : "!"}
                       </span>
@@ -296,7 +315,7 @@ export default function DayDetail({
             neuen Lauf (3–6-h-Raster) verändert hat.
           </p>
           <ResponsiveContainer width="100%" height={120}>
-            <LineChart data={evo.pts} margin={{ top: 8, right: 10, bottom: 0, left: -22 }}>
+            <LineChart data={evo.pts} margin={{ top: 8, right: 10, bottom: 0, left: -12 }}>
               <CartesianGrid stroke={PALETTE.gridLine} strokeDasharray="2 4" vertical={false} />
               {windBands(unit)}
               <XAxis
@@ -304,7 +323,8 @@ export default function DayDetail({
                 type="number"
                 domain={["dataMin", 0]}
                 reversed
-                tickFormatter={(h) => (h === 0 ? "jetzt" : `-${Math.round(h)}h`)}
+                // „−7 T" statt „−169h"
+                tickFormatter={(h) => (h === 0 ? "jetzt" : h >= 36 ? `−${Math.round(h / 24)} T` : `−${Math.round(h)} h`)}
                 tick={{ fontSize: 11, fill: PALETTE.axis }}
                 stroke={PALETTE.axisLine}
                 tickLine={{ stroke: PALETTE.axisLine }}
@@ -320,9 +340,10 @@ export default function DayDetail({
               <Line
                 type="monotone"
                 dataKey="peak"
-                stroke={PALETTE.teal}
+                className={SERIES_CLASS.wind}
+                stroke={SERIES_FALLBACK.wind}
                 strokeWidth={2}
-                dot={{ r: 2.5, fill: PALETTE.teal }}
+                dot={{ r: 2.5, fill: SERIES_FALLBACK.wind, style: { fill: SERIES.wind } }}
                 isAnimationActive={false}
                 connectNulls
               />

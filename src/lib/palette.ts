@@ -12,6 +12,11 @@
 // PALETTE trägt zusätzlich das Diagramm-Chrome. Diese Werte gehen als SVG-Attribut an
 // Recharts und werden in globals.css themenabhängig überschrieben (CSS gewinnt gegen
 // Präsentationsattribute) — sie sind also der Dunkel-Fall und gleichzeitig der Rückfall.
+//
+// Datenreihen (Wind, Böen, Messung …) laufen genauso: Farbe als CSS-Variable (--series-*, je
+// Thema eigene Töne), an Recharts-Linien per Klasse (SERIES_CLASS) — ein SVG-Attribut kann
+// keine Variable auflösen. Früher standen hier nur die Dunkel-Töne; auf Weiß hatte die
+// Windlinie damit 1,8 : 1 Kontrast.
 import { TH, toneOf } from "./kite";
 
 export const PALETTE = {
@@ -52,10 +57,34 @@ export const MODEL_COLORS = [
   "#a16207", "#14b8a6", "#c026d3", "#4d7c0f",
 ];
 
-// Gemessene Stationen (Serienfarben, gehen als SVG-Attribut an Recharts) — deutlich abgesetzt
-// von der türkisen Prognose. Einzige Stelle; Diagramm und Kopf-Kacheln lesen beide hier.
-export const STATION_COLORS = ["#f472b6", "#fbbf24", "#34d399"];
-export const stationColor = (i: number) => STATION_COLORS[i % STATION_COLORS.length];
+/**
+ * Datenreihen der Diagramme als CSS-Variablen (für style/Legende/Tooltip) und als Klasse (für
+ * Recharts-Linien; die Regeln stehen in globals.css). Wind = Tinte wie der Konsens in der
+ * Analyse — nicht Türkis, das heißt in den Kacheln „fahrbar" und stünde sonst auch bei 3 kn da.
+ */
+export const SERIES = {
+  wind: "var(--series-wind)",
+  gust: "var(--series-gust)",
+  past: "var(--series-past)",
+} as const;
+export const SERIES_CLASS = {
+  wind: "series-wind",
+  gust: "series-gust",
+  past: "series-past",
+} as const;
+/** Rückfall fürs SVG-Attribut (z. B. aktiver Punkt) — ein Mittelton, der in beiden Themen trägt. */
+export const SERIES_FALLBACK = { wind: "#64748b", gust: "#8b5cf6", past: "#94a3b8" } as const;
+
+// Gemessene Stationen — deutlich abgesetzt von Prognose und Windskala (pink, indigo, stein).
+// Einzige Stelle; Diagramm, Kopfzeile und Modell-Check lesen hier.
+const STATION_N = 3;
+const STATION_FALLBACK = ["#db2777", "#6366f1", "#78716c"];
+/** Stationsfarbe als CSS-Variable — kippt mit dem Thema. */
+export const stationColor = (i: number) => `var(--series-station-${(i % STATION_N) + 1})`;
+/** Klasse für die Recharts-Linie einer Station (Regeln in globals.css). */
+export const stationClass = (i: number) => `series-station-${(i % STATION_N) + 1}`;
+/** Rückfall fürs SVG-Attribut. */
+export const stationFallback = (i: number) => STATION_FALLBACK[i % STATION_N];
 
 // Modell-Kategorien (Analyse) als CSS-Variablen — kippen mit dem Thema.
 export const CAT_LABEL: Record<string, string> = {

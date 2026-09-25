@@ -104,18 +104,21 @@ export default function HelpPage() {
           darunter: dort rechnen meist nur noch die groben globalen Modelle.
         </Item>
         <Item name="Übersicht">
-          Je Spot: Wind jetzt (gemessen, sonst Prognose), die gemessene Wassertemperatur und die Fahrfenster
-          der nächsten 5 Tage. Darunter das <b>Kachel-Raster</b> bis zum übernächsten Wochenende — Wochenenden
-          umrahmt. Tippen auf den Spot, ein Fenster oder einen Tag öffnet die Detailansicht (Zurück führt zur
-          Übersicht); die Raster beider Spots scrollen gemeinsam.
+          Je Spot eine kurze Karte: Wind jetzt (gemessen, sonst Prognose), die gemessene Wassertemperatur und —
+          falls es welche gibt — die Fahrfenster der nächsten 5 Tage. Darunter <b>ein</b> Kachel-Raster für
+          beide Spots bis zum übernächsten Wochenende, mit Legende. Tippen auf einen Spot, ein Fenster oder eine
+          Stunde im Raster öffnet die Detailansicht (Zurück führt zur Übersicht). Die Einheit (kn oder m/s)
+          stellst du unten im Fuß um; sie bleibt auf dem Gerät gemerkt.
         </Item>
         <Item name="Kachel-Raster">
-          Spalten = Tageslicht-Stunden im 3-h-Takt. Zeilen: <b>Wind</b> und <b>Böen</b> (farbig, s. u.),{" "}
-          <b>Dir</b> = Windrichtung (rot hinterlegt = ablandig/ungeeignet, gelb = bedingt), <b>%</b> =
-          Wahrscheinlichkeit für mindestens {TH.min} kn (je sicherer, desto kräftiger), <b>mm</b> = Regen (⚡ = Verdacht auf Schauerböen),{" "}
-          <b>°C</b> = Luft. Grüner Strich über der Stunde = fahrbar. Blasse Tage = nur noch grobe globale
-          Modelle, entsprechend unsicher. Pfeil neben dem Datum = Tageswind seit gestern stabil / steigend /
-          fallend.
+          Spalten = Tageslicht-Stunden im 3-h-Takt, eine Zeitachse für beide Spots. Je Spot: <b>Wind</b> und{" "}
+          <b>Böen</b> — Farbe erst ab {TH.min - 3} kn, volle Farbe ab {TH.min} kn (fahrbar), darunter nur die
+          Zahl; so springen die fahrbaren Stunden ins Auge. <b>Richt.</b> = Windrichtung, ab {TH.min - 3} kn
+          markiert (rot hinterlegt = ablandig/ungeeignet, schraffiert = bedingt). <b>%</b> = Wahrscheinlichkeit
+          für mindestens {TH.min} kn (je sicherer, desto kräftiger). <b>Regen</b> in mm/h erscheint nur, wenn
+          es regnet (⚡ = Verdacht auf Schauerböen). <b>°C</b> = Luft. Grüner Strich über der Stunde = fahrbar.
+          Blasse Tage = nur noch grobe globale Modelle, entsprechend unsicher. ↗ / ↘ in der Namenszeile am
+          Tagesende = Tageswind seit gestern gestiegen / gefallen.
         </Item>
         <Item name="Fahrfenster">
           z. B. „Do. 24.9. 8–16 Uhr · 14–19 kn · NNW · Ø 61 %“: Zeitraum, schwächste–stärkste Stunde,
@@ -123,12 +126,18 @@ export default function HelpPage() {
           Wahrscheinlichkeit (kleiner Balken). Dass es über das ganze Fenster hält, ist etwas weniger
           wahrscheinlich. Prozente sind bewusst nicht farbig — die Farben gehören der Windstärke.
         </Item>
+        <Item name="Spot-Ansicht">
+          Oben der Wind jetzt — gemessen an der Station (sonst die Prognose) —, Richtung und Luft. Darunter
+          eine Zeile, wie weit die Prognose zuletzt neben der Messung lag: um so viel sind die nächsten Stunden
+          angepasst. Die Tagesleiste zeigt je Tag den Tageswind als Kachel und das beste Fahrfenster; Tippen
+          öffnet den Tag.
+        </Item>
         <Item name="Verlauf">
-          <b>Türkis</b> = Konsens-Prognose, <b>lila gestrichelt</b> = Böen, <b>pink</b> = gemessen
-          (geglättet; blass dahinter die einzelnen 10-min-Werte),{" "}
-          <b>hellgrau gestrichelt</b> = die Prognose von vor 24 h (so siehst du, wie gut sie zuletzt lag),{" "}
-          <b>gelb</b> = nach der aktuellen Messung korrigierte nächste Stunden, <b>grüne Fläche</b> =
-          Fahrfenster, <b>grün gestrichelte Linie</b> = Mindestwind. Die dezenten <b>waagerechten
+          <b>Durchgezogene Linie</b> (dunkel, im dunklen Thema hell) = Konsens-Prognose, <b>lila gestrichelt</b>{" "}
+          = Böen, <b>pink</b> = gemessen (geglättet; blass dahinter die einzelnen 10-min-Werte),{" "}
+          <b>grau gestrichelt</b> = die Prognose von vor 24 h (so siehst du, wie gut sie zuletzt lag),{" "}
+          <b>gepunktet</b> = nach der aktuellen Messung korrigierte nächste Stunden, <b>grüne Fläche</b> =
+          Fahrfenster, <b>türkis gestrichelte Linie</b> = Mindestwind. Die dezenten <b>waagerechten
           Farbbänder</b> im Hintergrund entsprechen den Kachelfarben (knapp / fahrbar / gut / kräftig / zu viel)
           — das gilt für alle Wind-Grafiken. Darunter ein Streifen mit der Windrichtung (Pfeile) und der
           Wahrscheinlichkeit je Stunde (je dunkler, desto sicherer; grün = Fahrfenster). Aufklappbar: wie sich
@@ -154,14 +163,17 @@ export default function HelpPage() {
           <div key={s.id} className="mb-3">
             <div className="font-600 text-ink">{s.name}</div>
             <ul className="ml-4 list-disc text-body">
+              {/* Dieselben Markierungen wie im Raster: bedingt schraffiert, ungeeignet rot. */}
               <li>
-                <span style={{ color: "var(--wg-green)" }}>gut:</span> {s.dirs.good.map(sector).join(", ")}
+                <span className="font-600 text-ink">gut:</span> {s.dirs.good.map(sector).join(", ")}
               </li>
               <li>
-                <span style={{ color: "var(--wg-amber)" }}>bedingt:</span> {s.dirs.ok.map(sector).join(", ")}
+                <span className="hatch mr-1 inline-block h-[11px] w-[13px] rounded-[2px] align-[-1px]" />
+                <span className="font-600 text-ink">bedingt:</span> {s.dirs.ok.map(sector).join(", ")}
               </li>
               <li>
-                <span style={{ color: "var(--wg-red)" }}>ungeeignet:</span> alles andere
+                <span className="mr-1 inline-block h-[11px] w-[13px] rounded-[2px] align-[-1px]" style={{ background: "color-mix(in srgb, var(--wg-red) 25%, transparent)" }} />
+                <span className="font-600" style={{ color: "var(--wg-red)" }}>ungeeignet:</span> alles andere
               </li>
               {s.dirs.hints?.map((h) => (
                 <li key={h.text} className="text-muted">
@@ -339,12 +351,12 @@ export default function HelpPage() {
         <Formula>Konsens = Σ (Gewicht × korrigierter Wind) / Σ Gewicht</Formula>
         <p>
           Die Windrichtung wird als Vektor gemittelt (damit 350° und 10° nicht 180° ergeben). Temperatur, Regen
-          und Wolken werden genauso gewichtet gemittelt. Aus der Streuung der Modelle um den Konsens entstehen
+          und Wolken werden genauso gewichtet gemittelt — jeweils nur über die Modelle, die den Wert liefern. Aus der Streuung der Modelle um den Konsens entstehen
           Min/Max und die Standardabweichung.
         </p>
         <p className="mt-2">
           Ein Mittel glättet Spitzen — sehen zwei Modelle die Front um 11 bzw. 15 Uhr, zeigt der Konsens einen
-          flachen Buckel. Darum nennt die Tageskarte zusätzlich die <b>Modell-Spitze</b>: erst jedes Modell für
+          flachen Buckel. Darum nennt die Tagesansicht zusätzlich die <b>Modell-Spitze</b>: erst jedes Modell für
           sich (Ø seiner 3 stärksten Tageslicht-Stunden), dann der Median darüber, gewichtet mit den
           Stundengewichten des Modells an diesem Tag.
         </p>
@@ -590,16 +602,16 @@ function Pipeline() {
           </g>
         ))}
         {/* Lernschleife — pink wie die Messung in den Diagrammen */}
-        <rect x={150} y={118} width={260} height={40} rx={10} fill="rgba(244,114,182,.08)" stroke="#f472b6" strokeOpacity={0.6} />
+        <rect x={150} y={118} width={260} height={40} rx={10} strokeOpacity={0.6} style={{ fill: "color-mix(in srgb, var(--series-station-1) 8%, transparent)", stroke: "var(--series-station-1)" }} />
         <text x={280} y={136} textAnchor="middle" className="fill-ink" fontSize={13} fontWeight={600}>
           Messstation ↔ frühere Prognosen
         </text>
         <text x={280} y={151} textAnchor="middle" className="fill-muted" fontSize={11}>
           eigener Lern-Job, stündlich
         </text>
-        <path d="M210 118 V76" stroke="#f472b6" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" />
-        <path d="M350 118 V76" stroke="#f472b6" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" />
-        <path d="M410 138 H630 V76" stroke="#f472b6" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" />
+        <path d="M210 118 V76" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" style={{ stroke: "var(--series-station-1)" }} />
+        <path d="M350 118 V76" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" style={{ stroke: "var(--series-station-1)" }} />
+        <path d="M410 138 H630 V76" strokeOpacity={0.7} markerEnd="url(#arr)" fill="none" style={{ stroke: "var(--series-station-1)" }} />
       </svg>
     </div>
   );
@@ -636,13 +648,13 @@ function RollingSketch() {
       <text x={(xF + 412) / 2} y={26} textAnchor="middle" className="fill-muted" fontSize={11}>
         fürs Lernen unsichtbar
       </text>
-      <line x1={xF} y1={16} x2={xF} y2={112} strokeWidth={2} style={{ stroke: "var(--wg-amber)" }} />
-      <text x={xF - 6} y={108} textAnchor="end" fontSize={12} fontWeight={600} style={{ fill: "var(--wg-amber)" }}>
+      <line x1={xF} y1={16} x2={xF} y2={112} strokeWidth={2} style={{ stroke: "var(--color-ink)" }} />
+      <text x={xF - 6} y={108} textAnchor="end" fontSize={12} fontWeight={600} style={{ fill: "var(--color-ink)" }}>
         Prüf-Zeitpunkt
       </text>
       {leads.map((l) => (
         <g key={l.h}>
-          <circle cx={l.x} cy={96} r={4} fill="#f472b6" />
+          <circle cx={l.x} cy={96} r={4} style={{ fill: "var(--series-station-1)" }} />
           <text x={l.x} y={116} textAnchor="middle" className="fill-muted" fontSize={11}>
             +{l.h} h
           </text>
@@ -664,8 +676,19 @@ function ColorScale() {
   ];
   return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-7">
-      {steps.map((s) => (
-        <div key={s.label} className="rounded-md px-2 py-1.5 text-center" style={{ background: s.color + "d9", color: "#0b1220" }}>
+      {steps.map((s, i) => (
+        // Wie die Kacheln: „zu wenig" ohne Fläche, „knapp" zart, ab „fahrbar" volle Farbe.
+        <div
+          key={s.label}
+          className={`rounded-md px-2 py-1.5 text-center ${i === 0 ? "border border-border-soft text-muted" : i === 1 ? "text-body" : ""}`}
+          style={
+            i === 0
+              ? undefined
+              : i === 1
+                ? { background: "color-mix(in srgb, var(--wg-blue) 22%, transparent)" }
+                : { background: s.color + "d9", color: "#0b1220" }
+          }
+        >
           <div className="text-[12px] font-700">{s.label}</div>
           <div className="font-mono text-[11px]">{s.to == null ? `ab ${s.from}` : `${s.from}–${s.to - 1}`} kn</div>
         </div>
@@ -694,12 +717,12 @@ function ProbSketch() {
   };
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full max-w-[520px]" role="img" aria-label="Wahrscheinlichkeit aus Modell-Glockenkurven">
-      <rect x={x(TH.min)} y={10} width={x(26) - x(TH.min)} height={H - 32} fillOpacity={0.08} style={{ fill: "var(--wg-green)" }} />
+      <rect x={x(TH.min)} y={10} width={x(26) - x(TH.min)} height={H - 32} fillOpacity={0.08} style={{ fill: "var(--wg-teal)" }} />
       {models.map((m) => (
         <polyline key={m.mu} points={curve(m.mu, m.sd)} fill="none" strokeWidth={2} style={{ stroke: m.color }} />
       ))}
-      <line x1={x(TH.min)} y1={8} x2={x(TH.min)} y2={H - 22} strokeDasharray="5 4" style={{ stroke: "var(--wg-green)" }} />
-      <text x={x(TH.min) + 4} y={20} fontSize={11} style={{ fill: "var(--wg-green)" }}>
+      <line x1={x(TH.min)} y1={8} x2={x(TH.min)} y2={H - 22} strokeDasharray="5 4" style={{ stroke: "var(--wg-teal)" }} />
+      <text x={x(TH.min) + 4} y={20} fontSize={11} style={{ fill: "var(--wg-teal)" }}>
         {TH.min} kn
       </text>
       <line x1={20} y1={H - 22} x2={W - 20} y2={H - 22} className="stroke-faint" />
@@ -720,7 +743,7 @@ function NowcastSketch() {
       {gain.map((g, k) => (
         <div key={k} className="flex w-8 flex-col items-center gap-1">
           <div className="flex h-12 w-4 items-end rounded bg-[color:var(--color-bg-2)]">
-            <div className="w-full rounded" style={{ height: `${g * 100}%`, background: "var(--wg-amber)", opacity: 0.8 }} />
+            <div className="w-full rounded" style={{ height: `${g * 100}%`, background: "var(--series-wind)", opacity: 0.55 }} />
           </div>
           <span className="font-mono text-[10px] text-muted">+{k} h</span>
         </div>

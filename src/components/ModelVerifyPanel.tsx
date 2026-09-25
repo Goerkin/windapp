@@ -11,10 +11,11 @@ import {
 } from "recharts";
 import type { SpotPayload, ModelVerification } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
-import { PALETTE, MODEL_COLORS, stationColor } from "@/lib/palette";
+import { PALETTE, MODEL_COLORS, stationClass, stationColor, stationFallback } from "@/lib/palette";
 import { fmtTime, relTime, windBands } from "./ui";
 
-const MEASURED = stationColor(0); // wie die Messlinie im Verlauf
+// Wie die Messlinie im Verlauf: CSS-Variable für style, Klasse + Rückfall für die SVG-Linie.
+const MEASURED = stationColor(0);
 
 export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; unit: WindUnit }) {
   const [data, setData] = useState<ModelVerification | null>(null);
@@ -182,7 +183,7 @@ export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; un
                 type="monotone"
                 dataKey="consensus"
                 className="line-consensus"
-            stroke={PALETTE.axis}
+                stroke={PALETTE.axis}
                 strokeWidth={2}
                 strokeDasharray="5 3"
                 dot={false}
@@ -192,9 +193,10 @@ export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; un
               <Line
                 type="monotone"
                 dataKey="measured"
-                stroke={MEASURED}
+                className={stationClass(0)}
+                stroke={stationFallback(0)}
                 strokeWidth={2.8}
-                dot={{ r: 1.8, fill: MEASURED, strokeWidth: 0 }}
+                dot={{ r: 1.8, fill: stationFallback(0), strokeWidth: 0, style: { fill: MEASURED } }}
                 isAnimationActive={false}
                 connectNulls
               />
@@ -208,7 +210,7 @@ export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; un
               <span className="inline-block h-0.5 w-5 rounded" style={{ background: MEASURED }} /> Gemessen
             </span>
             <span className="flex items-center gap-1.5 text-muted">
-              <span className="inline-block h-0.5 w-5 rounded bg-white" /> Konsens
+              <span className="inline-block h-0.5 w-5 rounded" style={{ background: "var(--chart-axis)" }} /> Konsens
             </span>
             {topModels.map((m, i) => (
               <button

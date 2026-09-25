@@ -29,18 +29,24 @@ export function toneOf(kt: number | null, th: Thresholds): Tone {
   return "red";
 }
 
-const RATING_LABEL: Record<Tone, string> = {
-  grey: "zu wenig",
+// Mit geschütztem Leerzeichen: „zu wenig" bricht sonst am Handy mitten im Wort-Paar um.
+export const TONE_LABEL: Record<Tone, string> = {
+  grey: "zu\u00a0wenig",
   blue: "knapp",
   teal: "fahrbar",
   green: "gut",
   amber: "kräftig",
-  orange: "zu viel",
+  orange: "zu\u00a0viel",
   red: "gefährlich",
 };
 
+/** Untergrenze (kn) je Stufe — für die Farb-Legende. */
+export function toneFloor(tone: Tone, th: Thresholds): number {
+  return { grey: 0, blue: th.min - 3, teal: th.min, green: th.good, amber: th.strong, orange: th.over, red: th.over + 8 }[tone];
+}
+
 export function ratingLabel(kt: number | null, th: Thresholds): string {
-  return kt == null ? "keine Daten" : RATING_LABEL[toneOf(kt, th)];
+  return kt == null ? "keine Daten" : TONE_LABEL[toneOf(kt, th)];
 }
 
 // ── Richtung ───────────────────────────────────────────────────────────────────────────

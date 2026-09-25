@@ -60,6 +60,23 @@
   --tint-up: #15803d;
   --tint-down: #be123c;
 
+  /* ── Datenreihen der Diagramme (Linien, Legende, Tooltip). Eigene Töne je Thema: die
+        Dunkel-Töne hatten auf Weiß 1,7–2,7 : 1 Kontrast — ausgerechnet im Thema für die Sonne.
+        Wind = Tinte (wie der Konsens in der Analyse), nicht Türkis: das heißt „fahrbar". ── */
+  --series-wind: #0c1626;
+  --series-gust: #8b5cf6;
+  --series-past: #64748b;
+  --series-station-1: #be185d;
+  --series-station-2: #4f46e5;
+  --series-station-3: #78716c;
+
+  /* Richtung „bedingt": neutrale Schraffur. Früher Amber — das heißt in den Kacheln „kräftig". */
+  --hatch: rgba(12, 22, 38, 0.3);
+
+  /* Karten-Schatten je Thema — der dunkle (schwarz, 80 %) legte im hellen einen Schmier unter
+     jede Karte. */
+  --shadow-card: 0 1px 2px rgba(12, 22, 38, 0.05), 0 12px 28px -22px rgba(12, 22, 38, 0.3);
+
   /* ── Modell-Kategorien (Analyse) ── */
   --cat-meso: #0e7490;
   --cat-regional: #7c3aed;
@@ -92,7 +109,9 @@
     --color-accent: #dbe3f0;
     --color-amber: #f59e0b;
 
-    --wg-grey: #64748b;
+    /* = --color-muted wie im hellen Thema: „zu wenig" ist leise, aber lesbar (große Zahl jetzt,
+       Pfeile) — #64748b lag auf dem dunklen Grund bei 3 : 1. */
+    --wg-grey: #8a93a8;
     --wg-blue: #7c93b8;
     --wg-teal: #22d3ee;
     --wg-green: #22c55e;
@@ -115,6 +134,16 @@
     --cat-meso: #22d3ee;
     --cat-regional: #a78bfa;
     --cat-global: #f59e0b;
+
+    --series-wind: #e8edf6;
+    --series-gust: #a78bfa;
+    --series-past: #94a3b8;
+    --series-station-1: #f472b6;
+    --series-station-2: #818cf8;
+    --series-station-3: #a8a29e;
+
+    --hatch: rgba(232, 237, 246, 0.3);
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 40px -30px rgba(0, 0, 0, 0.8);
   }
 }
 
@@ -149,7 +178,7 @@ body {
     background: linear-gradient(180deg, var(--color-panel-2) 0%, var(--color-panel) 100%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-card);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 20px 40px -30px rgba(0, 0, 0, 0.8);
+    box-shadow: var(--shadow-card);
   }
   .panel-flat {
     background: var(--color-panel);
@@ -220,24 +249,9 @@ body {
     color: var(--color-muted);
   }
 
-  .live-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--wg-green);
-    animation: pulse 2s infinite;
-  }
-}
-
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wg-green) 45%, transparent);
-  }
-  70% {
-    box-shadow: 0 0 0 7px color-mix(in srgb, var(--wg-green) 0%, transparent);
-  }
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--wg-green) 0%, transparent);
+  /* Schraffur für „Richtung bedingt" (Raster, Legende). */
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--hatch) 0 1.5px, transparent 1.5px 4.5px);
   }
 }
 
@@ -289,4 +303,37 @@ body {
    stroke-Attribut, weil ein SVG-Präsentationsattribut keine CSS-Variable auflösen kann. */
 .line-consensus .recharts-line-curve {
   stroke: var(--chart-axis);
+}
+
+/* Datenreihen: Klasse an der Recharts-Linie (SERIES_CLASS / stationClass in palette.ts), Farbe
+   je Thema aus --series-*. Dieselbe Technik wie oben. Punkte (dot/activeDot) rendert Recharts 3
+   in einer eigenen z-Ebene außerhalb der Linie — dort greift die Klasse nicht; sie bekommen die
+   Variable per `style` (das reicht Recharts an den Kreis durch). */
+.series-wind .recharts-line-curve {
+  stroke: var(--series-wind);
+}
+.series-wind .recharts-symbols {
+  fill: var(--series-wind);
+}
+.series-gust .recharts-line-curve {
+  stroke: var(--series-gust);
+}
+.series-past .recharts-line-curve {
+  stroke: var(--series-past);
+}
+.series-run .recharts-line-curve {
+  stroke: var(--color-faint);
+}
+.series-station-1 .recharts-line-curve {
+  stroke: var(--series-station-1);
+}
+.series-station-2 .recharts-line-curve {
+  stroke: var(--series-station-2);
+}
+.series-station-3 .recharts-line-curve {
+  stroke: var(--series-station-3);
+}
+/* Mindestwind-Linie („ab 13") in der Farbe von „fahrbar" — früher Grün, das heißt „gut". */
+.ref-min .recharts-reference-line-line {
+  stroke: var(--wg-teal);
 }

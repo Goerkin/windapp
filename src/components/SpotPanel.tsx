@@ -36,107 +36,113 @@ export default function SpotPanel({
     setTab("day");
   };
   const now = spot.now;
-  const toneColor = now ? ktColor(now.windspd) : "var(--wg-grey)";
-  const dq = dirQuality(now?.winddir ?? null, spot.dirs);
-  const hint = dirHint(now?.winddir ?? null, spot.dirs);
+  // Wind jetzt wie in der Übersicht: Messung (≤ 90 min alt), sonst Prognose. Früher stand hier
+  // die Prognose groß und die Messung klein daneben — nach dem Tippen sprang die große Zahl
+  // von 6 auf 2, und mit der Korrektur-Zeile standen vier Werte für „jetzt" da.
+  const stIdx = spot.stations.findIndex((x) => x.windAvg != null && (x.ageMin ?? 999) <= 90);
+  const st = stIdx >= 0 ? spot.stations[stIdx] : null;
+  const heroKt = st?.windAvg ?? now?.windspd ?? null;
+  const heroGust = st ? st.windMax : (now?.gust ?? null);
+  const heroDir = st?.windDir ?? now?.winddir ?? null;
+  const airTemp = st?.temp ?? now?.tmp ?? null;
+  const others = spot.stations.filter((x, i) => i !== stIdx && x.windAvg != null && (x.ageMin ?? 999) <= 90);
+  const toneColor = ktColor(heroKt);
+  const dq = dirQuality(heroDir, spot.dirs);
+  const hint = dirHint(heroDir, spot.dirs);
   const nc = spot.nowcast;
 
   return (
     <section className="panel overflow-hidden">
       {/* Kopf */}
-      <div className="flex items-start justify-between gap-3 border-b border-border-soft p-4 sm:p-5">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="border-b border-border-soft p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
             <h2 className="font-display text-xl font-700 text-ink">{spot.name}</h2>
-            {!spot.empty && <span className="live-dot" title="Live-Datenstand" />}
+            <p className="text-xs text-muted">{spot.region}</p>
           </div>
-          <p className="text-xs text-muted">{spot.region}</p>
+          <div className="text-right text-xs text-muted">{spot.fetchedAt ? `Stand ${relTime(spot.fetchedAt)}` : "keine Daten"}</div>
         </div>
-        <div className="text-right text-xs text-muted">
-          {spot.fetchedAt ? (
-            <>
-              <div>Stand {relTime(spot.fetchedAt)}</div>
-              {spot.sunrise && spot.sunset && (
-                <div className="mt-0.5">
-                  <SunIcon /> {spot.sunrise}–{spot.sunset} · <WaterTemps water={spot.water} fallback={spot.waterTemp} />
-                </div>
-              )}
-            </>
-          ) : (
-            <span>keine Daten</span>
-          )}
-        </div>
+        {/* Eigene Zeile über die volle Breite — rechts neben dem Namen war sie am Handy auf vier
+            Zeilen gequetscht. */}
+        {spot.fetchedAt && spot.sunrise && spot.sunset && (
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
+            <span className="whitespace-nowrap">
+              <SunIcon /> {spot.sunrise}–{spot.sunset}
+            </span>
+            <WaterTemps water={spot.water} fallback={spot.waterTemp} />
+          </div>
+        )}
       </div>
 
       {spot.empty || !now ? (
         <div className="p-8 text-center text-sm text-muted">Warte auf ersten Datenabruf für {spot.name}…</div>
       ) : (
         <>
-          {/* Aktuell */}
+          {/* Jetzt */}
           <div className="flex flex-wrap items-end gap-x-8 gap-y-4 p-4 sm:p-5">
             <div>
-              <div className="label">Prognose jetzt</div>
+              <div className="label" style={st ? { color: stationColor(stIdx) } : undefined}>
+                {st ? `Gemessen · ${st.name}` : "Prognose jetzt"}
+              </div>
               <div className="flex items-baseline gap-2">
                 <span className="font-display text-5xl font-700 leading-none sm:text-6xl" style={{ color: toneColor }}>
-                  {fmtWind(now.windspd, unit)}
+                  {fmtWind(heroKt, unit)}
                 </span>
                 <span className="text-sm text-muted">{unitLabel(unit)}</span>
               </div>
-              <div className="mt-1 text-sm text-body">
-                Böen <span className="font-mono text-ink">{fmtWind(now.gust, unit)}</span> {unitLabel(unit)}
-                <span className="ml-2 chip" style={{ color: toneColor, borderColor: `color-mix(in srgb, ${toneColor} 35%, transparent)` }}>
-                  {ratingLabel(now.windspd, th)}
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-body">
+                <span className="whitespace-nowrap">
+                  Böen <span className="font-mono text-ink">{fmtWind(heroGust, unit)}</span> {unitLabel(unit)}
                 </span>
+                <span className="chip" style={{ color: toneColor, borderColor: `color-mix(in srgb, ${toneColor} 35%, transparent)` }}>
+                  {ratingLabel(heroKt, th)}
+                </span>
+                {st?.obsTime && <span className="whitespace-nowrap text-xs text-muted">{relTime(st.obsTime)}</span>}
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <WindArrow dir={now.winddir} kt={now.windspd} size={44} />
+              <WindArrow dir={heroDir} kt={heroKt} size={44} />
               <div>
                 <div className="font-display text-2xl text-ink">
-                  <Compass dir={now.winddir} />
+                  <Compass dir={heroDir} />
                 </div>
                 <div
                   className="text-xs"
-                  style={{ color: dq === "bad" ? "var(--wg-red)" : dq === "ok" ? "var(--wg-amber)" : "var(--color-muted)" }}
+                  style={{
+                    color: dq === "bad" ? "var(--wg-red)" : dq === "ok" ? "var(--color-ink)" : "var(--color-muted)",
+                    fontWeight: dq === "ok" ? 600 : undefined,
+                  }}
                 >
-                  {now.winddir ?? "–"}° · {dq ? DIR_LABEL[dq] : "–"}
+                  {heroDir ?? "–"}° · {dq ? DIR_LABEL[dq] : "–"}
                 </div>
                 {hint && <div className="max-w-[220px] text-[11px] text-faint">{hint}</div>}
               </div>
             </div>
 
-            {/* Gemessen (Live-Stationen) — mit Abgleich zur Prognose */}
-            {spot.stations.map((st, i) =>
-              st.windAvg == null ? null : (
-                <div
-                  key={st.id}
-                  className="rounded-xl border border-border px-4 py-2"
-                  style={{ borderColor: stationColor(i) + "55" }}
-                  title={st.obsTime ? `gemessen ${relTime(st.obsTime)} · Station ${st.name}` : undefined}
-                >
-                  <div className="text-xs font-600" style={{ color: stationColor(i) }}>
-                    gemessen · {st.name}
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-display text-3xl font-700 leading-none text-ink">{fmtWind(st.windAvg, unit)}</span>
-                    <span className="text-sm text-muted">{unitLabel(unit)}</span>
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted">
-                    Böen <span className="font-mono text-body">{fmtWind(st.windMax, unit)}</span> · <Compass dir={st.windDir} />
-                    {st.obsTime && <> · {relTime(st.obsTime)}</>}
-                  </div>
-                </div>
-              ),
-            )}
-
             <div className="flex gap-6">
-              <Metric label="Luft" value={now.tmp != null ? `${Math.round(now.tmp)}°` : "–"} />
-              <Metric label="gefühlt" value={now.tmpe != null ? `${Math.round(now.tmpe)}°` : "–"} />
-              <Metric label="Wolken" value={now.cloud != null ? `${now.cloud}%` : "–"} />
+              <Metric
+                label="Luft"
+                value={airTemp != null ? `${Math.round(airTemp)}°` : "–"}
+                title={st?.temp != null ? `gemessen · ${st.name}` : "Prognose"}
+              />
+              <Metric label="Wolken" value={now.cloud != null ? `${now.cloud}\u00a0%` : "–"} />
               <Metric label="Modelle" value={String(now.n)} title="Anzahl Modelle im Konsens für diesen Zeitpunkt" />
             </div>
           </div>
+
+          {others.length > 0 && (
+            <p className="-mt-2 px-4 pb-3 text-xs text-muted sm:px-5">
+              Auch gemessen:{" "}
+              {others.map((o, i) => (
+                <span key={o.id} className="whitespace-nowrap">
+                  {i > 0 && " · "}
+                  <span style={{ color: stationColor(spot.stations.indexOf(o)) }}>{o.name}</span>{" "}
+                  <span className="font-mono text-ink">{fmtWind(o.windAvg, unit)}</span> {unitLabel(unit)}
+                </span>
+              ))}
+            </p>
+          )}
 
           {nc && <NowcastNote nc={nc} unit={unit} />}
 
@@ -191,35 +197,38 @@ export default function SpotPanel({
 }
 
 /**
- * Messung vs. Prognose jetzt — und was das für die nächsten Stunden heißt. Bewusst neutral
- * gestaltet: das ist eine Information, keine Warnung (Rot bleibt „gefährlich/zu viel").
+ * Eine Zeile: wie weit lag die Prognose zuletzt neben der Messung, und was heißt das für die
+ * nächsten Stunden. Die Einzelwerte (Messung Ø ~60 min, Prognose) stehen im Tooltip — neben der
+ * großen Messzahl oben wären es sonst wieder mehrere Werte für „jetzt". Bewusst neutral: eine
+ * Information, keine Warnung (Rot bleibt „gefährlich/ablandig").
  */
 function NowcastNote({ nc, unit }: { nc: NonNullable<SpotPayload["nowcast"]>; unit: WindUnit }) {
   const off = nc.offset;
   const u = unitLabel(unit);
-  const big = Math.abs(off) >= 2;
   return (
-    <div className="mx-4 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-[color:var(--tint-neutral)] px-3 py-2 text-sm sm:mx-5">
-      <span className="text-muted">
-        {nc.station} misst <span className="font-600 tabular-nums text-ink">{fmtWind(nc.measured, unit)}</span> {u}, Prognose{" "}
-        <span className="font-600 tabular-nums text-ink">{fmtWind(nc.forecast, unit)}</span> {u}
-      </span>
-      {big ? (
+    <p
+      className="mx-4 mb-3 rounded-xl border border-border-soft bg-[color:var(--tint-neutral)] px-3 py-2 text-sm text-body sm:mx-5"
+      title={`${nc.station}: gemessen ${fmtWind(nc.measured, unit)} ${u} (Ø der letzten ~60 min), Prognose ${fmtWind(nc.forecast, unit)} ${u}. Bei einem Winddreh über 60° endet die Korrektur.`}
+    >
+      {Math.abs(off) >= 2 ? (
         <>
-          <span className="chip tabular-nums text-ink" title="So viel wird auf die nächsten Stunden aufgeschlagen bzw. abgezogen">
-            Korrektur {off > 0 ? "+" : "−"}
-            {fmtWind(Math.abs(off), unit)} {u}
-          </span>
-          <span className="basis-full text-[12px] text-faint">
-            Die nächsten Stunden sind angepasst
-            {nc.halfLifeH != null ? `; nach ~${nc.halfLifeH} h gilt noch die Hälfte (aus den Daten gelernt)` : ""}. Bei
-            einem Winddreh über 60° endet die Korrektur.
-          </span>
+          Prognose lag zuletzt{" "}
+          <span className="whitespace-nowrap font-600 tabular-nums text-ink">
+            {fmtWind(Math.abs(off), unit)} {u} zu {off > 0 ? "niedrig" : "hoch"}
+          </span>{" "}
+          — die nächsten Stunden sind angepasst
+          {nc.halfLifeH != null && <span className="text-muted">, nach ~{nc.halfLifeH}&nbsp;h noch zur Hälfte</span>}.
         </>
       ) : (
-        <span className="chip text-muted">Prognose passt (±{fmtWind(2, unit)} {u})</span>
+        <>
+          Prognose passt zur Messung{" "}
+          <span className="whitespace-nowrap text-muted">
+            (±{fmtWind(2, unit)} {u})
+          </span>
+          .
+        </>
       )}
-    </div>
+    </p>
   );
 }
 

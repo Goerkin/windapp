@@ -37,9 +37,10 @@ Scheitert `create-project`: Free Edition erlaubt nur ein Lakebase-Projekt je Acc
 | `src/lib/skill.ts` | Nur noch **Leser** von `ModelSkill`/`SpotStat`. Gelernt wird in `scripts/skill_job.py`. |
 | `src/lib/consensus.ts` | Konsens je Stunde aus korrigierten, gewichteten Modellen |
 | `src/lib/data.ts` | Baut das Dashboard-Payload (`SpotPayload`) |
+| `src/lib/dates.ts` | **Einzige** Datums-/Zeitformate („Sa 26.9.", „Sa 14:00", „Sa 26.9., 14:00"), Server wie Client — keine eigenen `Intl.DateTimeFormat` mit Wochentag mehr anlegen |
 | `src/lib/kite.ts` | Client-Logik: Schwellen (fix Twintip 80 kg), Richtung, Tageslicht, P(≥13 kn), Fahrfenster, Tages-Zusammenfassung |
 | `public/sw.js` + `src/app/manifest.ts` | PWA: installierbar auf dem Homescreen, zeigt ohne Netz den zuletzt geladenen Stand. Der Service Worker wird in `ServiceWorker.tsx` nur im Produktions-Build angemeldet. Ein Deploy erreicht die installierte App von allein (HTML/Daten immer zuerst aus dem Netz, JS-Dateien tragen den Inhalt im Namen); ein geänderter `sw.js` installiert sich ebenfalls selbst — `VERSION` steuert nur das Verwerfen der alten Caches, und zwar erst beim übernächsten Öffnen. Symbole in `public/` sind eingecheckt, erzeugt von `scripts/make-icons.mjs`. |
-| `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx`: Übersicht = `Verdict` (Antwortzeile über beide Spots) + `SpotOverview` (+ `ForecastGrid`); ein Tipp öffnet `SpotPanel` (Tabs Verlauf/Tag) als eigene Ansicht, per `history.pushState` mit `#slug` (Zurück-Geste führt zur Übersicht, Direktlink geht). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel` (+ `HourBreakdown`: Rechnung einer Konsens-Stunde) / `AccuracyPanel` (+ `LearnedPanel`: gelernte Korrekturen). |
+| `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx`: Übersicht = `Verdict` (Antwortzeile über beide Spots, einzige Stelle für den Ausblick) + `SpotOverview` (kompakte Karte je Spot; Fahrfenster-Block nur, wenn es welche gibt) + **ein** `ForecastGrid` für alle Spots (gemeinsame Zeitachse, darunter die Legende `WindScale`); ein Tipp öffnet `SpotPanel` (Messung groß, Korrektur als eine Zeile, `DailyStrip` als schmale Tagesleiste, Tabs Verlauf/Tag) als eigene Ansicht, per `history.pushState` mit `#slug` (Zurück-Geste führt zur Übersicht, Direktlink geht). Kopf am Handy einzeilig; Einheit kn/m/s im Fuß, je Gerät gemerkt (`useUnit.ts`). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel` (+ `HourBreakdown`: Rechnung einer Konsens-Stunde) / `AccuracyPanel` (+ `LearnedPanel`: gelernte Korrekturen). |
 | `prisma/schema.prisma` | Tabellen: Spot, Snapshot, ModelRun, SnapshotRun, StationObs, WaterTemp, ModelSkill, SpotStat (+ ModelSeries: ALT, bis zur Umstellung, s. DATABRICKS.md) |
 | `scripts/migrate-runs.mjs` | Einmalige Umstellung ModelSeries → ModelRun (idempotent; `--drop-legacy` danach) |
 
@@ -106,14 +107,24 @@ node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach 
   wählen (`SELECT_MIN_N`).
 - **Farbbedeutungen trennen**: Windfarben (`--wg-*`) nur für Windstärke; Bedienung (aktive Tabs,
   Hover) über das neutrale `--color-accent`; Wahrscheinlichkeiten neutral (`ProbMeter`, Deckkraft),
-  nie in Wind-Tönen; Rot nur für „gefährlich/ablandig". Fenster > 5 Kalendertage voraus
-  (`NEAR_DAYS`) nur als Ausblick zeigen.
+  nie in Wind-Tönen; Rot nur für „gefährlich/ablandig". Trends (steigt/fällt) neutral — die
+  Pfeilform trägt die Richtung, nicht Grün/Rot. Richtung „bedingt" = neutrale Schraffur (`.hatch`),
+  nicht Amber. Die Windlinie ist Tinte (`--series-wind`), nicht Türkis. Fenster > 5 Kalendertage
+  voraus (`NEAR_DAYS`) nur als Ausblick zeigen.
+- **Wind-Kacheln** nur über `WindTile` (ui.tsx): unter 10 kn keine Fläche, 10–13 kn zart, ab
+  13 kn volle Farbe. Keine vollen grauen Blöcke für „zu wenig" — die waren die dunkelste Fläche
+  der Seite, und die fahrbaren Stunden gingen darin unter.
 - **Farben nie hart codieren.** Schwellen aus `TH` (kite.ts). Farben aus den CSS-Variablen in
   `globals.css` bzw. `ktColor()` (liefert `var(--wg-…)`, kippt mit hell/dunkel). `ktColorHex()`
   nur, wo eine Deckkraft angehängt wird. Achtung: ein SVG-**Präsentationsattribut**
   (`fill="…"`, `stroke="…"`) kann **kein** `var()` auflösen — dort entweder `style={{ fill }}`,
   eine Tailwind-Utility (`className="fill-ink"`) oder eine Regel in `globals.css` benutzen
-  (CSS schlägt Präsentationsattribute, so ist das Recharts-Chrome gelöst).
+  (CSS schlägt Präsentationsattribute, so ist das Recharts-Chrome gelöst). **Datenreihen**
+  (Wind, Böen, Messung, Prognose von gestern) haben je Thema eigene Töne (`--series-*`): an die
+  Recharts-Linie per Klasse (`SERIES_CLASS`, `stationClass()` in palette.ts), in Legende/Tooltip
+  per `SERIES`/`stationColor()`. Punkte (`dot`, `activeDot`) rendert Recharts 3 in einer eigenen
+  z-Ebene außerhalb der Linie — dort greift die Klasse nicht, sie bekommen `style: { fill }`.
+  Nie wieder PALETTE-Hex für Reihen: das sind die Dunkel-Töne (Windlinie hatte auf Weiß 1,8 : 1).
 - Nach UI-Änderungen visuell prüfen: Desktop + ~390 px Handybreite, **und hell + dunkel**.
 - Die App wird überwiegend **installiert auf dem Handy** benutzt. Darum: kein Zustand, der ein
   Neuladen der Seite braucht (eine Homescreen-App wird geweckt, nicht neu geladen), und nichts,
@@ -143,3 +154,9 @@ node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach 
   verwirft deshalb nur sein eigenes Schema selbst (`DROP SCHEMA e2e_jobs`).
 - Die frühere Aussage „ESLint-Config ist kaputt" war falsch: der `FlatCompat`-Umweg war es.
   `eslint-config-next` 16 exportiert bereits Flat-Config-Arrays und wird direkt importiert.
+- **Wettergrößen im Konsens** (Temperatur, Wolken, Regen, Feuchte) nur über die Modelle mitteln,
+  die sie liefern — im Nenner deren Gewicht, nicht das aller Modelle (`WX` in consensus.ts,
+  Test `tests/consensus-weather.test.ts`). Sonst zieht jedes Modell ohne die Reihe den Wert
+  Richtung 0. `TMPE` ist bei Windguru dieselbe Lufttemperatur wie `TMP` (höhenkorrigiert, am
+  Meer gleich) und lieferten nur 6 von 15 Modellen — die frühere Anzeige „gefühlt 8°" bei 21 °C
+  kam genau daher. Es gibt keine gefühlte Temperatur in den Daten.

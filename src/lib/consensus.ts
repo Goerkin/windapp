@@ -18,7 +18,6 @@ export type SeriesInput = {
     GUST?: (number | null)[];
     WINDDIR?: (number | null)[];
     TMP?: (number | null)[];
-    TMPE?: (number | null)[];
     TCDC?: (number | null)[];
     HCDC?: (number | null)[];
     MCDC?: (number | null)[];
@@ -35,7 +34,6 @@ export type ConsensusPoint = {
   gust: number | null;
   winddir: number | null;
   tmp: number | null;
-  tmpe: number | null;
   cloud: number | null;
   cloudLow: number | null;
   cloudMid: number | null;
@@ -114,6 +112,19 @@ function round(v: number | null, d = 1): number | null {
   return Math.round(v * f) / f;
 }
 
+// Wettergrößen neben dem Wind: Feld im Konsens-Punkt, Reihe bei Windguru, Nachkommastellen.
+// Jede Größe wird nur über die Modelle gemittelt, die sie auch liefern — im Nenner steht deren
+// Gewicht, nicht das aller Modelle. Sonst zieht jedes Modell ohne die Reihe den Wert Richtung 0.
+const WX = [
+  ["tmp", "TMP", 1],
+  ["cloud", "TCDC", 0],
+  ["cloudLow", "LCDC", 0],
+  ["cloudMid", "MCDC", 0],
+  ["cloudHigh", "HCDC", 0],
+  ["precip", "APCP1", 2],
+  ["rh", "RH", 0],
+] as const;
+
 export function buildConsensus(
   models: SeriesInput[],
   nowSec = Date.now() / 1000,
@@ -140,14 +151,8 @@ export function buildConsensus(
     let wSum = 0;
     let windAcc = 0;
     let gustAcc = 0;
-    let tmpAcc = 0;
-    let tmpeAcc = 0;
-    let cloudAcc = 0;
-    let lowAcc = 0;
-    let midAcc = 0;
-    let highAcc = 0;
-    let precipAcc = 0;
-    let rhAcc = 0;
+    const wxAcc = WX.map(() => 0);
+    const wxW = WX.map(() => 0);
     let dirX = 0;
     let dirY = 0;
     let n = 0;
@@ -171,22 +176,12 @@ export function buildConsensus(
       const gust = lerpAt(times, m.series.GUST, t);
       // Böen um dieselbe Korrektur verschieben; fehlt GUST, grob 1.25 × Wind schätzen.
       gustAcc += w * (gust != null ? Math.max(wind, gust - c.shift) : wind * 1.25);
-      const tmp = lerpAt(times, m.series.TMP, t);
-      if (tmp != null) tmpAcc += w * tmp;
-      const tmpe = lerpAt(times, m.series.TMPE, t);
-      if (tmpe != null) tmpeAcc += w * tmpe;
-      const cloud = lerpAt(times, m.series.TCDC, t);
-      if (cloud != null) cloudAcc += w * cloud;
-      const low = lerpAt(times, m.series.LCDC, t);
-      if (low != null) lowAcc += w * low;
-      const mid = lerpAt(times, m.series.MCDC, t);
-      if (mid != null) midAcc += w * mid;
-      const high = lerpAt(times, m.series.HCDC, t);
-      if (high != null) highAcc += w * high;
-      const precip = lerpAt(times, m.series.APCP1, t);
-      if (precip != null) precipAcc += w * precip;
-      const rh = lerpAt(times, m.series.RH, t);
-      if (rh != null) rhAcc += w * rh;
+      WX.forEach(([, key], k) => {
+        const v = lerpAt(times, m.series[key], t);
+        if (v == null) return;
+        wxAcc[k] += w * v;
+        wxW[k] += w;
+      });
 
       if (c.dir != null) {
         dirX += w * Math.cos((c.dir * Math.PI) / 180);
@@ -207,19 +202,16 @@ export function buildConsensus(
       if (dir < 0) dir += 360;
     }
 
+    const wx = Object.fromEntries(
+      WX.map(([name, , digits], k) => [name, wxW[k] > 0 ? round(wxAcc[k] / wxW[k], digits) : null]),
+    ) as Record<(typeof WX)[number][0], number | null>;
+
     const pt: ConsensusPoint = {
       t,
       windspd: round(windMean),
       gust: round(gustAcc / wSum),
       winddir: dir == null ? null : Math.round(dir),
-      tmp: round(tmpAcc / wSum),
-      tmpe: round(tmpeAcc / wSum),
-      cloud: round(cloudAcc / wSum, 0),
-      cloudLow: round(lowAcc / wSum, 0),
-      cloudMid: round(midAcc / wSum, 0),
-      cloudHigh: round(highAcc / wSum, 0),
-      precip: round(precipAcc / wSum, 2),
-      rh: round(rhAcc / wSum, 0),
+      ...wx,
       windMin: round(windMin === Infinity ? null : windMin),
       windMax: round(windMax === -Infinity ? null : windMax),
       windSd: round(sd),

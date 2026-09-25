@@ -8,6 +8,7 @@ import SpotPanel from "./SpotPanel";
 import SpotOverview from "./SpotOverview";
 import Verdict from "./Verdict";
 import { relTime } from "./ui";
+import { useUnit } from "./useUnit";
 
 // Ab diesem Alter gilt der Datenstand als hängend und wird angemahnt. Der 24/7-Job zieht
 // alle 30 min; die App holt selbst KEINE Daten mehr (ein Schreibpfad, nicht zwei).
@@ -21,7 +22,7 @@ export default function Dashboard({
   initialError: string | null;
 }) {
   const [spots, setSpots] = useState<SpotPayload[]>(initialSpots);
-  const [unit, setUnit] = useState<WindUnit>("kn");
+  const [unit, setUnit] = useUnit();
   const [error, setError] = useState<string | null>(initialError);
   const [busy, setBusy] = useState(false);
 
@@ -129,13 +130,6 @@ export default function Dashboard({
 
   const nav = (
     <>
-      <div className="seg" role="group" aria-label="Einheit">
-        {(["kn", "ms"] as WindUnit[]).map((u) => (
-          <button key={u} data-active={unit === u} onClick={() => setUnit(u)}>
-            {u === "kn" ? "kn" : "m/s"}
-          </button>
-        ))}
-      </div>
       <Link href="/analyse" className="chip hover:border-accent" title="Modellvergleich und Güte-Rückschau">
         Analyse
       </Link>
@@ -162,25 +156,18 @@ export default function Dashboard({
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
+      {/* Eine Zeile, auch am Handy: die Antwort soll oben stehen, nicht hinter zwei Zeilen
+          Bedienung. Analyse/Hilfe stehen am Handy im Fuß, die Einheit überall dort. */}
       <header className="mb-3 flex items-center justify-between gap-3 sm:mb-5">
         <button type="button" onClick={detail ? backToOverview : undefined} className="flex min-w-0 items-center gap-2.5 text-left">
           <WindLogo />
-          <div className="min-w-0">
-            <h1 className="font-display text-xl font-700 leading-none text-ink sm:text-3xl">Wind Cockpit</h1>
-            <p
-              className="mt-1 hidden text-[11px] text-faint sm:block"
-              title="Referenz Twintip, 80 kg: fahrbar ab / gut ab / kräftig ab / zu viel ab"
-            >
-              fahrbar ab {th.min} · gut {th.good} · kräftig {th.strong} · zu viel {th.over} kn
-            </p>
-          </div>
+          <h1 className="font-display text-xl font-700 leading-none text-ink sm:text-3xl">Wind Cockpit</h1>
         </button>
         <div className="flex items-center gap-2 sm:gap-3">
-          <div className="hidden items-center gap-3 sm:flex">{nav}</div>
+          <nav className="hidden items-center gap-3 sm:flex">{nav}</nav>
           {refreshBtn}
         </div>
       </header>
-      <nav className="mb-4 flex items-center gap-2 sm:hidden">{nav}</nav>
 
       {error && (
         <div className="panel-flat mb-4 border-l-2 p-4 text-sm" style={{ borderLeftColor: "var(--wg-red)" }}>
@@ -235,16 +222,23 @@ export default function Dashboard({
       )}
 
       <footer className="mt-8 border-t border-border-soft pt-4 text-xs text-faint">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          {nav}
+          <span className="ml-auto flex items-center gap-2">
+            <span className="text-muted">Einheit</span>
+            <span className="seg" role="group" aria-label="Einheit">
+              {(["kn", "ms"] as WindUnit[]).map((u) => (
+                <button key={u} data-active={unit === u} onClick={() => setUnit(u)}>
+                  {u === "kn" ? "kn" : "m/s"}
+                </button>
+              ))}
+            </span>
+          </span>
+        </div>
         <p>
           Eigener Modell-Mix aus frei abrufbaren Windguru-Modelldaten, statistisch nachkorrigiert
-          und gegen die Messstation geprüft. Privates Dashboard, nicht mit Windguru affiliiert.{" "}
-          <Link href="/hilfe" className="underline hover:text-ink">
-            Wie die Zahlen entstehen
-          </Link>{" "}
-          ·{" "}
-          <Link href="/analyse" className="underline hover:text-ink">
-            Modelle &amp; Genauigkeit
-          </Link>
+          und gegen die Messstation geprüft. Privates Dashboard, nicht mit Windguru affiliiert.
+          Referenz für die Stufen: Twintip, 80 kg.
         </p>
       </footer>
     </div>

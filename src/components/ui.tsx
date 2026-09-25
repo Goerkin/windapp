@@ -1,8 +1,10 @@
 "use client";
+import { useSyncExternalStore } from "react";
 import { compass, convertWind, unitLabel, type WindUnit } from "@/lib/units";
 import { ReferenceArea } from "recharts";
-import { ktColor, PALETTE } from "@/lib/palette";
-import { TH, type RideWindow, type TrendState } from "@/lib/kite";
+import { ktColor, ktColorHex, PALETTE } from "@/lib/palette";
+import { TH, TONE_LABEL, toneFloor, toneOf, type RideWindow, type Tone, type TrendState } from "@/lib/kite";
+import { fmtDay } from "@/lib/dates";
 
 const TZ = "Europe/Amsterdam";
 
@@ -79,6 +81,8 @@ export function DeltaBadge({
       </span>
     );
   }
+  // Neutral: die Pfeilform trägt die Richtung. Rot heißt „gefährlich/ablandig", Grün „gut" —
+  // eine schwächere Prognose ist weder das eine noch das andere.
   const up = delta > 0;
   const v = convertWind(Math.abs(delta), unit);
   const txt = v == null ? "" : unit === "ms" ? v.toFixed(1) : String(Math.round(v));
@@ -86,8 +90,8 @@ export function DeltaBadge({
     <span
       className="chip"
       style={{
-        color: up ? "var(--tint-up)" : "var(--tint-down)",
-        borderColor: up ? "var(--tint-up)" : "var(--tint-down)",
+        color: "var(--color-ink)",
+        borderColor: "color-mix(in srgb, var(--color-ink) 35%, transparent)",
         background: "var(--tint-neutral)",
       }}
       title={`Änderung des Tages-Winds (Ø stärkste 3 h) gegenüber dem Datenstand vor ~${label ?? "24 h"}`}
@@ -137,9 +141,8 @@ export function SunIcon({ size = 12 }: { size?: number }) {
 }
 
 const _hourOnly = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" });
-const _dow = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short", day: "numeric", month: "numeric" });
 
-/** „Sa 11–17 Uhr · 18–22 kn · WSW · 80 %" — die Kernaussage eines Fahrfensters. */
+/** „Sa 26.9. 11–17 Uhr · 18–22 kn · WSW · 80 %" — die Kernaussage eines Fahrfensters. */
 export function WindowLine({
   w,
   unit,
@@ -157,9 +160,9 @@ export function WindowLine({
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       <span className="font-600 text-ink">
-        {withDay && `${_dow.format(new Date(w.start * 1000)).replace(",", "")} `}
+        {withDay && `${fmtDay(w.start)} `}
         {h(w.start)}–{h(w.end)}
-        {!compact && " Uhr"}
+        {!compact && "\u00a0Uhr"}
       </span>
       <span className="text-faint">·</span>
       <span className="font-600 tabular-nums" style={{ color: ktColor((w.lo + w.hi) / 2) }}>
@@ -170,7 +173,7 @@ export function WindowLine({
       <span className="inline-flex items-center gap-0.5">
         <WindArrow dir={w.dir} kt={(w.lo + w.hi) / 2} size={12} />
         <span className="text-body">{compass(w.dir)}</span>
-        {w.dirQ === "ok" && <span title="Richtung nur bedingt geeignet" className="text-[color:var(--wg-amber)]">!</span>}
+        {w.dirQ === "ok" && <span title="Richtung nur bedingt geeignet" className="font-700 text-ink">!</span>}
       </span>
       <span className="text-faint">·</span>
       <ProbMeter
@@ -184,7 +187,8 @@ export function WindowLine({
 /** „stabil / steigt / fällt seit gestern" als kleine Markierung. */
 export function TrendMark({ trend, unit, compact = false }: { trend: TrendState | null; unit: WindUnit; compact?: boolean }) {
   if (!trend) return null;
-  const color = trend.state === "stabil" ? "var(--color-muted)" : trend.state === "steigt" ? "var(--tint-up)" : "var(--tint-down)";
+  // Neutral wie DeltaBadge — der Pfeil sagt „steigt/fällt", die Farbe bleibt der Windstärke.
+  const color = trend.state === "stabil" ? "var(--color-muted)" : "var(--color-ink)";
   const sym = trend.state === "stabil" ? "→" : trend.state === "steigt" ? "↗" : "↘";
   const v = convertWind(Math.abs(trend.delta), unit);
   return (
@@ -218,12 +222,15 @@ export function WaterTemps({
   }
   return (
     <span className={className}>
-      <WaveIcon />{" "}
+      <WaveIcon />
+      {"\u00a0"}
       {water.map((w, i) => (
         <span key={w.name} title={`gemessen ${relTime(w.obsTime)} · Rijkswaterstaat`}>
           {i > 0 && " · "}
-          <span className="text-body">{w.value.toFixed(1)}°</span>
-          {water.length > 1 && <span className="text-faint"> {w.name}</span>}
+          <span className="whitespace-nowrap">
+            <span className="text-body">{w.value.toFixed(1)}°</span>
+            {water.length > 1 && <span className="text-faint">{"\u00a0"}{w.name}</span>}
+          </span>
         </span>
       ))}
     </span>
@@ -248,4 +255,88 @@ export function windBands(unit: WindUnit) {
   return bands.map(([from, to, color, op]) => (
     <ReferenceArea key={`wb${from}`} y1={c(from)} y2={c(to)} fill={color} fillOpacity={op} stroke="none" ifOverflow="hidden" />
   ));
+}
+
+// Richtung „ablandig/ungeeignet" im Raster: rot hinterlegt (Rot heißt genau das).
+export const OFFSHORE_TINT = "color-mix(in srgb, var(--wg-red) 25%, transparent)";
+
+/**
+ * Wind-Kachel wie bei Windguru, aber mit klarer Rangfolge: unter 10 kn keine Fläche (leise),
+ * 10–13 kn zart getönt, ab 13 kn volle Farbe. Früher war „zu wenig" ein voller grauer Block —
+ * die dunkelste Fläche der Seite —, und die paar fahrbaren Stunden gingen darin unter.
+ * `text` ersetzt die Zahl (Legende).
+ */
+export function WindTile({
+  kt,
+  unit,
+  text,
+  className = "",
+}: {
+  kt: number | null;
+  unit: WindUnit;
+  text?: string;
+  className?: string;
+}) {
+  if (kt == null) return <span className={`block text-faint ${className}`}>–</span>;
+  const tone = toneOf(kt, TH);
+  const label = text ?? fmtWind(kt, unit);
+  if (tone === "grey") return <span className={`block text-muted ${className}`}>{label}</span>;
+  if (tone === "blue") {
+    return (
+      <span className={`block rounded-[3px] text-body ${className}`} style={{ background: "color-mix(in srgb, var(--wg-blue) 22%, transparent)" }}>
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`block rounded-[3px] font-600 ${className}`}
+      // dunkle Schrift auf gesättigter Kachel, in beiden Themen
+      style={{ background: ktColorHex(kt) + "d9", color: "#0b1220" }}
+    >
+      {label}
+    </span>
+  );
+}
+
+const TONES: Tone[] = ["grey", "blue", "teal", "green", "amber", "orange", "red"];
+
+/** Legende zum Kachel-Raster: Farbstufen (Untergrenze in der gewählten Einheit) + Markierungen. */
+export function WindScale({ unit }: { unit: WindUnit }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted">
+      <span className="text-faint">Wind in {unitLabel(unit)}:</span>
+      {TONES.map((tone) => {
+        const floor = toneFloor(tone, TH);
+        const sample = tone === "grey" ? TH.min - 4 : floor;
+        const text = tone === "grey" ? `<${fmtWind(TH.min - 3, unit)}` : fmtWind(floor, unit);
+        return (
+          <span key={tone} className="inline-flex items-center gap-1 whitespace-nowrap">
+            <WindTile kt={sample} unit={unit} text={text} className="min-w-[24px] px-0.5 text-center font-mono text-[10px] leading-[16px]" />
+            {TONE_LABEL[tone]}
+          </span>
+        );
+      })}
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span className="inline-block h-[3px] w-[14px] rounded-full bg-[color:var(--wg-green)]" /> fahrbare Stunde
+      </span>
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span className="hatch inline-block h-[12px] w-[14px] rounded-[2px]" /> Richtung bedingt
+      </span>
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span className="inline-block h-[12px] w-[14px] rounded-[2px]" style={{ background: OFFSHORE_TINT }} /> ablandig
+      </span>
+    </div>
+  );
+}
+
+const WIDE = "(min-width: 640px)";
+const subscribeWide = (cb: () => void) => {
+  const m = matchMedia(WIDE);
+  m.addEventListener("change", cb);
+  return () => m.removeEventListener("change", cb);
+};
+/** Breiter Bildschirm (ab sm)? Für Dichte-Entscheidungen in Diagrammen; der Server rechnet schmal. */
+export function useWide(): boolean {
+  return useSyncExternalStore(subscribeWide, () => matchMedia(WIDE).matches, () => false);
 }

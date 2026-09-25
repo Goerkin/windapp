@@ -5,6 +5,7 @@ import { unitLabel } from "@/lib/units";
 import { ktColor } from "@/lib/palette";
 import { ratingLabel, TH, type DaySummary, type HourEval, type RideWindow } from "@/lib/kite";
 import { WindowLine, dayKeyOf, fmtWind } from "./ui";
+import { fmtDay } from "@/lib/dates";
 
 // So viele Kalendertage (heute mitgezählt) gilt ein Fenster als „in Sicht"; dahinter ist es
 // Ausblick — meist rechnen dann nur noch die globalen Modelle, die Prozente sind entsprechend
@@ -14,8 +15,6 @@ export const lastNearDay = (nowSec: number) => dayKeyOf(nowSec + (NEAR_DAYS - 1)
 
 type Hit = { spot: SpotPayload; w: RideWindow };
 
-const dowFmt = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Amsterdam", weekday: "short", day: "numeric", month: "numeric" });
-const dow = (sec: number) => dowFmt.format(new Date(sec * 1000)).replace(",", "");
 
 /**
  * Die Antwort zuerst: eine Zeile über beiden Spots — geht heute/morgen etwas, wann ist die
@@ -59,7 +58,7 @@ export default function Verdict({
     )
     .sort((a, b) => (b.d.peak ?? 0) - (a.d.peak ?? 0))[0];
 
-  const whenOf = (w: RideWindow) => (w.day === today ? "Heute" : w.day === tomorrow ? "Morgen" : dow(w.start));
+  const whenOf = (w: RideWindow) => (w.day === today ? "Heute" : w.day === tomorrow ? "Morgen" : fmtDay(w.start));
 
   const row = (h: Hit, lead?: string) => (
     <button
@@ -114,8 +113,8 @@ export default function Verdict({
           {outlook.slice(0, 4).map((h, i) => (
             <span key={`${h.spot.id}-${h.w.start}`}>
               {i > 0 && " · "}
-              <button type="button" onClick={() => onOpen(h.spot.id, h.w.day)} className="underline decoration-dotted underline-offset-2 hover:text-ink">
-                {dow(h.w.start)} {h.spot.name}
+              <button type="button" onClick={() => onOpen(h.spot.id, h.w.day)} className="whitespace-nowrap underline decoration-dotted underline-offset-2 hover:text-ink">
+                {fmtDay(h.w.start)} {h.spot.name}
               </button>
             </span>
           ))}

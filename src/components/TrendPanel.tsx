@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
-import { PALETTE } from "@/lib/palette";
+import { PALETTE, SERIES, SERIES_CLASS, SERIES_FALLBACK } from "@/lib/palette";
 import { fmtTime, relTime, DeltaBadge, windBands } from "./ui";
 
 const HORIZON_H = 120;
@@ -38,7 +38,7 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
   // Ältere Läufe blasser (Reihenfolge: runs ist neu→alt).
   const runStyle = (ri: number) => {
     const frac = runs.length <= 1 ? 1 : ri / (runs.length - 1); // 0=neu, 1=alt
-    return { opacity: 0.55 - frac * 0.35, color: "var(--color-faint)" };
+    return { opacity: 0.55 - frac * 0.35 };
   };
 
   return (
@@ -85,7 +85,9 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
                   key={ri}
                   type="monotone"
                   dataKey={`r${ri}`}
-                  stroke={s.color}
+                  // Farbe über die Klasse: ein SVG-Attribut kann var(--color-faint) nicht auflösen.
+                  className="series-run"
+                  stroke={SERIES_FALLBACK.past}
                   strokeWidth={1}
                   strokeOpacity={s.opacity}
                   dot={false}
@@ -97,7 +99,8 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
             <Line
               type="monotone"
               dataKey="current"
-              stroke={PALETTE.teal}
+              className={SERIES_CLASS.wind}
+              stroke={SERIES_FALLBACK.wind}
               strokeWidth={2.6}
               dot={false}
               isAnimationActive={false}
@@ -111,7 +114,7 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
       {runs.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-muted">
           <span className="flex items-center gap-1.5 text-body">
-            <span className="inline-block h-0.5 w-5 rounded" style={{ background: PALETTE.teal }} /> jetziger Stand
+            <span className="inline-block h-0.5 w-5 rounded" style={{ background: SERIES.wind }} /> jetziger Stand
           </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-0.5 w-5 rounded bg-faint" /> frühere Stände (blasser = älter)

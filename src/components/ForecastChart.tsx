@@ -15,11 +15,11 @@ import {
 } from "recharts";
 import type { SpotPayload, StationView } from "@/lib/types";
 import { convertWind, unitLabel, compass, type WindUnit } from "@/lib/units";
-import { PALETTE, ktColor, stationColor as stColor } from "@/lib/palette";
+import { PALETTE, SERIES, SERIES_CLASS, SERIES_FALLBACK, ktColor, stationClass, stationColor, stationFallback } from "@/lib/palette";
 import { nowcastOffsetAt, nowcastCutoff, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
-import { fmtTime, windBands } from "./ui";
+import { dayKeyOf, hourOf, useWide, windBands } from "./ui";
+import { fmtWeekday, fmtWeekdayTime } from "@/lib/dates";
 
-const TZ = "Europe/Amsterdam";
 const HORIZONS = [
   { h: 72, label: "3 T" },
   { h: 120, label: "5 T" },
@@ -33,8 +33,12 @@ const SMOOTH_S = 20 * 60;
 
 type Row = Record<string, number | (number | null)[] | boolean | null>;
 
-const NOWCAST_COLOR = "#eab308"; // Mittelton: trägt auf hellem UND dunklem Grund
-const PAST_COLOR = "#94a3b8"; // dito
+// Beschriftete Uhrzeiten der x-Achse. Früher stand dort 00:00 — die Uhrzeit, die beim Kiten am
+// wenigsten interessiert; die Tagesgrenzen tragen schon die Wochentage. Breit: bis 5 Tage
+// 6/12/18 Uhr, darüber Mittag. Schmal (Handy): bis 5 Tage Mittag, darüber nichts — sonst ließ
+// Recharts einzelne Werte weg und es blieben unregelmäßige „12 18"-Paare.
+const tickHours = (horizonH: number, wide: boolean) =>
+  horizonH <= 120 ? (wide ? [6, 12, 18] : [12]) : wide ? [12] : [];
 
 export default function ForecastChart({
   spot,
@@ -50,6 +54,7 @@ export default function ForecastChart({
   days: DaySummary[];
 }) {
   const [horizon, setHorizon] = useState(72);
+  const wide = useWide();
 
   // useMemo, weil `?? []` sonst bei jedem Render ein neues Array liefert und die useMemo
   // weiter unten dadurch nie greift.
@@ -120,15 +125,24 @@ export default function ForecastChart({
 
     // Mitternachtsgrenzen (lokale Zeit) für Tagestrenner — über den gesamten Bereich.
     const midnights: { t: number; label: string }[] = [];
-    const dayFmt = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short" });
     let lastDay = "";
     for (const r of data) {
       const t = r.t as number;
-      const key = new Intl.DateTimeFormat("sv-SE", { timeZone: TZ }).format(new Date(t * 1000));
+      const key = dayKeyOf(t);
       if (key !== lastDay) {
-        midnights.push({ t, label: dayFmt.format(new Date(t * 1000)) });
+        midnights.push({ t, label: fmtWeekday(t) });
         lastDay = key;
       }
+    }
+    // Wochentag nur, wo das Stück bis zur nächsten Grenze breit genug ist — sonst standen am
+    // Handy „Do" und „Fr" übereinander (der erste, angeschnittene Tag ist oft nur Stunden lang).
+    if (data.length) {
+      const span = (data[data.length - 1].t as number) - (data[0].t as number);
+      const minSeg = Math.max(8 * 3600, 0.04 * span);
+      midnights.forEach((m, k) => {
+        const next = midnights[k + 1]?.t ?? (data[data.length - 1].t as number);
+        if (next - m.t < minSeg) m.label = "";
+      });
     }
     return { data, midnights };
   }, [spot, stations, horizon, unit]);
@@ -162,6 +176,9 @@ export default function ForecastChart({
   const nowSec = Date.now() / 1000;
   const firstT = data[0].t as number;
   const lastT = data[data.length - 1].t as number;
+  const want = tickHours(horizon, wide);
+  const ticks: number[] = [];
+  for (let t = Math.ceil(firstT / 3600) * 3600; t <= lastT; t += 3600) if (want.includes(hourOf(t))) ticks.push(t);
 
   return (
     <div>
@@ -185,8 +202,8 @@ export default function ForecastChart({
             type="number"
             scale="time"
             domain={["dataMin", "dataMax"]}
-            tickFormatter={(t) => fmtTime(t)}
-            ticks={midnights.map((m) => m.t)}
+            tickFormatter={(t) => String(hourOf(t)).padStart(2, "0")}
+            ticks={ticks}
             tick={{ fontSize: 12, fill: PALETTE.axis }}
             stroke={PALETTE.axisLine}
             tickLine={{ stroke: PALETTE.axisLine }}
@@ -224,10 +241,11 @@ export default function ForecastChart({
           )}
           <ReferenceLine
             y={convertWind(th.min, unit) ?? undefined}
-            stroke={PALETTE.green}
-            strokeOpacity={0.45}
+            className="ref-min"
+            stroke={PALETTE.teal}
+            strokeOpacity={0.6}
             strokeDasharray="6 4"
-            label={{ value: `ab ${convertWind(th.min, unit)}`, position: "insideBottomRight", fill: PALETTE.green, fontSize: 10 }}
+            label={{ value: `ab ${convertWind(th.min, unit)}`, position: "insideBottomRight", fill: PALETTE.axis, fontSize: 10 }}
           />
 
           {/* Tagestrenner */}
@@ -238,7 +256,7 @@ export default function ForecastChart({
               x={m.t}
               stroke={PALETTE.axisLine}
               strokeDasharray="3 3"
-              label={{ value: m.label, position: "insideTopLeft", fill: PALETTE.axis, fontSize: 12, fontWeight: 600 }}
+              label={m.label ? { value: m.label, position: "insideTopLeft", fill: PALETTE.axis, fontSize: 12, fontWeight: 600 } : undefined}
             />
           ))}
           {nowSec >= firstT && nowSec <= lastT && (
@@ -248,7 +266,8 @@ export default function ForecastChart({
           <Line
             type="monotone"
             dataKey="gust"
-            stroke={PALETTE.gust}
+            className={SERIES_CLASS.gust}
+            stroke={SERIES_FALLBACK.gust}
             strokeWidth={1.5}
             strokeDasharray="4 3"
             dot={false}
@@ -259,20 +278,22 @@ export default function ForecastChart({
           <Line
             type="monotone"
             dataKey="wind"
-            stroke={PALETTE.teal}
+            className={SERIES_CLASS.wind}
+            stroke={SERIES_FALLBACK.wind}
             strokeWidth={2.4}
             isAnimationActive={false}
             connectNulls
             name="Wind"
             dot={false}
-            activeDot={{ r: 4 }}
+            activeDot={{ r: 4, style: { fill: SERIES.wind } }}
           />
 
           {/* Damalige Prognose (vor ~24 h) — zum Abgleich mit der Messung */}
           <Line
             type="monotone"
             dataKey="past"
-            stroke={PAST_COLOR}
+            className={SERIES_CLASS.past}
+            stroke={SERIES_FALLBACK.past}
             strokeWidth={1.6}
             strokeDasharray="6 3"
             strokeOpacity={0.8}
@@ -281,11 +302,13 @@ export default function ForecastChart({
             connectNulls
           />
 
-          {/* Kurzfrist-Korrektur aus der Messung (klingt über wenige Stunden ab) */}
+          {/* Kurzfrist-Korrektur aus der Messung (klingt über wenige Stunden ab) — die Windlinie,
+              gepunktet. Früher Gelb, das gehört der Windskala („kräftig"). */}
           <Line
             type="monotone"
             dataKey="nowcast"
-            stroke={NOWCAST_COLOR}
+            className={SERIES_CLASS.wind}
+            stroke={SERIES_FALLBACK.wind}
             strokeWidth={2}
             strokeDasharray="2 3"
             dot={false}
@@ -299,7 +322,8 @@ export default function ForecastChart({
               key={`g${i}`}
               type="monotone"
               dataKey={`m${i}g`}
-              stroke={stColor(i)}
+              className={stationClass(i)}
+              stroke={stationFallback(i)}
               strokeWidth={1.3}
               strokeDasharray="4 3"
               strokeOpacity={0.6}
@@ -313,7 +337,8 @@ export default function ForecastChart({
               key={`r${i}`}
               type="linear"
               dataKey={`m${i}r`}
-              stroke={stColor(i)}
+              className={stationClass(i)}
+              stroke={stationFallback(i)}
               strokeWidth={1}
               strokeOpacity={0.3}
               dot={false}
@@ -326,7 +351,8 @@ export default function ForecastChart({
               key={`w${i}`}
               type="monotone"
               dataKey={`m${i}w`}
-              stroke={stColor(i)}
+              className={stationClass(i)}
+              stroke={stationFallback(i)}
               strokeWidth={2.4}
               dot={false}
               isAnimationActive={false}
@@ -370,11 +396,7 @@ function ProbTooltip({ active, payload }: { active?: boolean; payload?: Array<{ 
   const d = payload[0].payload;
   return (
     <div className="rounded-lg border border-border bg-[color:var(--color-bg-2)] px-3 py-1.5 text-xs">
-      <span className="text-ink">
-        {new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short", hour: "2-digit", minute: "2-digit" }).format(
-          new Date(d.t * 1000),
-        )}
-      </span>{" "}
+      <span className="text-ink">{fmtWeekdayTime(d.t)}</span>{" "}
       · <span className="font-mono text-ink">{d.p ?? "–"} %</span>
       {d.ride && <span className="ml-1 text-[color:var(--wg-green)]">fahrbar</span>}
     </div>
@@ -422,23 +444,16 @@ function ChartTooltip({
 
   return (
     <div className="rounded-lg border border-border bg-[color:var(--color-bg-2)] px-3 py-2 text-xs">
-      <div className="mb-1 font-600 text-ink">
-        {new Intl.DateTimeFormat("de-DE", {
-          timeZone: TZ,
-          weekday: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(new Date(t * 1000))}
-      </div>
+      <div className="mb-1 font-600 text-ink">{fmtWeekdayTime(t)}</div>
       {p.past != null && (
-        <div style={{ color: PAST_COLOR }}>
-          Prognose von vor 24 h <span className="font-mono">{fmt(p.past)}</span> {unitLabel(u)}
+        <div style={{ color: SERIES.past }}>
+          Prognose von vor 24&nbsp;h <span className="font-mono">{fmt(p.past)}</span> {unitLabel(u)}
         </div>
       )}
       {measuredIdx.length ? (
         measuredIdx.map((i) => (
           <div key={i}>
-            <span style={{ color: stColor(i) }}>Gemessen · {stations?.[i]?.name}</span>{" "}
+            <span style={{ color: stationColor(i) }}>Gemessen · {stations?.[i]?.name}</span>{" "}
             <span className="font-mono text-ink">{fmt(p[`m${i}w`])}</span> · Böen{" "}
             <span className="font-mono text-ink">{fmt(p[`m${i}g`])}</span> {unitLabel(u)} ·{" "}
             {compass((p[`m${i}d`] as number) ?? null)}
@@ -451,7 +466,7 @@ function ChartTooltip({
             <span className="font-mono text-ink">{fmt(p.gust)}</span> {unitLabel(u)}
           </div>
           {p.nowcast != null && (
-            <div style={{ color: NOWCAST_COLOR }}>
+            <div className="text-ink">
               korrigiert nach Messung <span className="font-mono">{fmt(p.nowcast)}</span> {unitLabel(u)}
             </div>
           )}
@@ -478,26 +493,26 @@ function Legend({
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-0.5 w-5 rounded" style={{ background: PALETTE.teal }} /> Wind
+        <span className="inline-block h-0.5 w-5 rounded" style={{ background: SERIES.wind }} /> Wind
       </span>
       <span className="flex items-center gap-1.5">
-        <span className="inline-block h-0.5 w-5 rounded" style={{ background: PALETTE.gust }} /> Böen
+        <span className="inline-block h-0 w-5 border-t-2 border-dashed" style={{ borderColor: SERIES.gust }} /> Böen
       </span>
       {(stations ?? []).map((st, i) => (
         <span key={st.id} className="flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-5 rounded" style={{ background: stColor(i) }} /> Gemessen ({st.name})
+          <span className="inline-block h-0.5 w-5 rounded" style={{ background: stationColor(i) }} /> Gemessen ({st.name})
         </span>
       ))}
       {past && (
         <span
           className="flex items-center gap-1.5"
-          title={`Konsens des Datenstands von ${new Date(past.fetchedAt).toLocaleString("de-DE", { timeZone: TZ, weekday: "short", hour: "2-digit", minute: "2-digit" })}, mit heutiger Korrektur gerechnet`}
+          title={`Konsens des Datenstands von ${fmtWeekdayTime(new Date(past.fetchedAt).getTime() / 1000)}, mit heutiger Korrektur gerechnet`}
         >
-          <span className="inline-block h-0 w-5 border-t-2 border-dashed" style={{ borderColor: PAST_COLOR }} />
-          Prognose von vor 24 h
+          <span className="inline-block h-0 w-5 border-t-2 border-dashed" style={{ borderColor: SERIES.past }} />
+          <span className="whitespace-nowrap">Prognose von vor 24&nbsp;h</span>
           {past.mae != null && past.n >= 3 && (
             <span className="text-faint">
-              (lag Ø {convertWind(past.mae, unit)} {unitLabel(unit)} daneben
+              (lag Ø {convertWind(past.mae, unit)}&nbsp;{unitLabel(unit)} daneben
               {past.bias != null && Math.abs(past.bias) >= 1 ? `, meist zu ${past.bias > 0 ? "hoch" : "niedrig"}` : ""})
             </span>
           )}
@@ -505,7 +520,7 @@ function Legend({
       )}
       {hasNowcast && (
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-5 rounded" style={{ background: NOWCAST_COLOR }} /> korrigiert nach Messung
+          <span className="inline-block h-0 w-5 border-t-2 border-dotted" style={{ borderColor: SERIES.wind }} /> korrigiert nach Messung
         </span>
       )}
       <span className="flex items-center gap-1.5">

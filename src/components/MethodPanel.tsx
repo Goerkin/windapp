@@ -1,7 +1,6 @@
 "use client";
 import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
-import { PALETTE } from "@/lib/palette";
 import { relTime } from "./ui";
 import { LEARN } from "@/lib/calib";
 
@@ -71,14 +70,14 @@ export default function MethodPanel({ spot, unit }: { spot: SpotPayload; unit: W
                   <tr key={x.key} className="border-t border-border-soft" style={{ background: active ? "var(--tint-accent)" : undefined }}>
                     <td className="py-1.5 pr-3 text-body">
                       {x.label}
-                      {active && <span className="ml-2 chip" style={{ color: PALETTE.teal }}>aktiv</span>}
+                      {active && <span className="ml-2 chip text-ink">aktiv</span>}
                     </td>
                     {x.leads.map((l) => (
                       <td key={l.leadH} className="py-1.5 pr-3 font-mono text-body">
                         {l.mae == null ? "–" : U.f(l.mae).toFixed(1)}
                       </td>
                     ))}
-                    <td className="py-1.5 pr-3 font-mono" style={{ color: x.meanMae === best ? PALETTE.green : undefined }}>
+                    <td className="py-1.5 pr-3 font-mono" style={x.meanMae === best ? { color: "var(--color-ink)", fontWeight: 700 } : undefined}>
                       {x.meanMae == null ? "–" : U.f(x.meanMae).toFixed(U.d)}
                     </td>
                   </tr>
@@ -128,16 +127,17 @@ export default function MethodPanel({ spot, unit }: { spot: SpotPayload; unit: W
                   <td className="py-1 pr-3 font-mono text-body">{r.pAvg == null ? "–" : `${Math.round(r.pAvg * 100)} %`}</td>
                   <td
                     className="py-1 pr-3 font-mono"
-                    style={{
-                      color:
-                        r.pAvg == null || r.obsFreq == null
-                          ? undefined
-                          : Math.abs(r.obsFreq - r.pAvg) <= 0.15
-                            ? PALETTE.green
-                            : PALETTE.amber,
-                    }}
+                    // Neutral (Grün/Amber gehören der Windskala): passt → kräftig mit ✓, sonst blass.
+                    style={
+                      r.pAvg == null || r.obsFreq == null
+                        ? undefined
+                        : Math.abs(r.obsFreq - r.pAvg) <= 0.15
+                          ? { color: "var(--color-ink)", fontWeight: 600 }
+                          : { color: "var(--color-muted)" }
+                    }
                   >
                     {r.obsFreq == null ? "–" : `${Math.round(r.obsFreq * 100)} %`}
+                    {r.pAvg != null && r.obsFreq != null && Math.abs(r.obsFreq - r.pAvg) <= 0.15 && " ✓"}
                   </td>
                   <td className="py-1 pr-3 text-muted">{r.n}</td>
                 </tr>
@@ -165,7 +165,7 @@ export default function MethodPanel({ spot, unit }: { spot: SpotPayload; unit: W
             {v.nowcast.gain.map((g, k) => (
               <div key={k} className="flex w-9 flex-col items-center gap-1">
                 <div className="flex h-16 w-5 items-end rounded bg-[color:var(--color-bg-2)]">
-                  <div className="w-full rounded" style={{ height: `${g * 100}%`, background: PALETTE.teal, opacity: 0.8 }} />
+                  <div className="w-full rounded" style={{ height: `${g * 100}%`, background: "var(--series-wind)", opacity: 0.55 }} />
                 </div>
                 <span className="font-mono text-[10px] text-muted">+{k} h</span>
               </div>
@@ -187,7 +187,7 @@ function Metric({ label, value, good }: { label: string; value: string; good?: b
   return (
     <div>
       <div className="text-[11px] uppercase tracking-wider text-muted">{label}</div>
-      <div className="font-mono text-base" style={{ color: good ? PALETTE.teal : "var(--color-ink)" }}>
+      <div className="font-mono text-base text-ink" style={{ fontWeight: good ? 700 : undefined }}>
         {value}
       </div>
     </div>

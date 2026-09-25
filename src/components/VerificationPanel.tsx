@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
-import { PALETTE } from "@/lib/palette";
+import { PALETTE, SERIES_CLASS, SERIES_FALLBACK } from "@/lib/palette";
 
 // Verifikation immer in kn oder m/s (Fehlermaße in Beaufort sind nicht sinnvoll → kn).
 function unitOf(unit: WindUnit) {
@@ -60,9 +60,7 @@ export default function VerificationPanel({ spot, unit }: { spot: SpotPayload; u
       {core && core.n > 0 && (
         <div className="mb-4 flex flex-wrap items-end gap-x-8 gap-y-3">
           <Stat label={`Trefferquote ±${v.hitToleranceKn} kn (${core.label})`} big>
-            <span style={{ color: PALETTE.teal }}>
-              {core.hit == null ? "–" : Math.round(core.hit * 100)}
-            </span>
+            <span className="text-ink">{core.hit == null ? "–" : Math.round(core.hit * 100)}</span>
             <span className="ml-1 text-sm text-muted">%</span>
           </Stat>
           <Stat label={`Ø Fehler (MAE)`}>
@@ -96,7 +94,7 @@ export default function VerificationPanel({ spot, unit }: { spot: SpotPayload; u
                 <td className="py-1.5 pr-3 font-mono text-body">
                   {l.n && l.bias != null ? (l.bias > 0 ? "+" : "") + fmt(l.bias) : "–"}
                 </td>
-                <td className="py-1.5 pr-3 font-mono" style={{ color: PALETTE.teal }}>
+                <td className="py-1.5 pr-3 font-mono text-ink">
                   {l.n && l.hit != null ? `${Math.round(l.hit * 100)} %` : "–"}
                 </td>
               </tr>
@@ -144,7 +142,7 @@ export default function VerificationPanel({ spot, unit }: { spot: SpotPayload; u
                 strokeDasharray="4 4"
               />
               <Tooltip content={<ScatterTip label={U.label} d={U.d} />} />
-              <Scatter data={scatter} fill={PALETTE.teal} fillOpacity={0.6} isAnimationActive={false} />
+              <Scatter data={scatter} className={SERIES_CLASS.wind} fill={SERIES_FALLBACK.wind} fillOpacity={0.5} isAnimationActive={false} />
             </ScatterChart>
           </ResponsiveContainer>
           <div className="mt-1 text-[11px] text-faint">Achsen: Wind in {U.label}</div>

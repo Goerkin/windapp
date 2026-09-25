@@ -13,10 +13,10 @@ import {
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
 import { PALETTE, MODEL_COLORS, CAT_LABEL, catColor } from "@/lib/palette";
+import { fmtWeekday, fmtWeekdayTime } from "@/lib/dates";
 import { fmtTime, dayKeyOf, hourOf, windBands } from "./ui";
 import HourBreakdown from "./HourBreakdown";
 
-const TZ = "Europe/Amsterdam";
 
 
 /**
@@ -32,7 +32,6 @@ function pick(m: { wind: (number | null)[]; windAdj?: (number | null)[] }, i: nu
   return view === "raw" ? m.wind[i] : m.windAdj?.[i] ?? m.wind[i];
 }
 
-const reachFmt = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short", hour: "2-digit", minute: "2-digit" });
 
 export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: WindUnit }) {
   const [count, setCount] = useState(6);
@@ -108,12 +107,11 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
 
     // Tagesgrenzen + Wochentag-Label für die Zeitachse (damit man den Tag ablesen kann).
     const midnights: { t: number; label: string }[] = [];
-    const dayFmt = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short" });
     let last = "";
     for (const { t } of idx) {
       const k = dayKeyOf(t);
       if (k !== last) {
-        midnights.push({ t, label: dayFmt.format(new Date(t * 1000)) });
+        midnights.push({ t, label: fmtWeekday(t) });
         last = k;
       }
     }
@@ -405,7 +403,7 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
               <p className="mt-1.5 text-xs text-muted">
                 {m.note}
                 {m.coverEnd != null && (
-                  <span className="text-faint"> · reicht bis {reachFmt.format(new Date(m.coverEnd * 1000))}</span>
+                  <span className="text-faint"> · reicht bis {fmtWeekdayTime(m.coverEnd)}</span>
                 )}
               </p>
             </div>
@@ -459,12 +457,7 @@ function ModelTooltip({
   const row = payload[0].payload;
   const t = row.t as unknown as number;
   const fmt = (v: number | null) => (v == null ? "–" : unit === "ms" ? v.toFixed(1) : String(Math.round(v)));
-  const when = new Intl.DateTimeFormat("de-DE", {
-    timeZone: TZ,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(t * 1000));
+  const when = fmtWeekdayTime(t);
   return (
     <div className="rounded-lg border border-border bg-[color:var(--color-bg-2)] px-3 py-2 text-xs">
       <div className="mb-1 font-600 text-ink">{when}</div>

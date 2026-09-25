@@ -2,13 +2,18 @@
 import type { DaySummary } from "@/lib/kite";
 import type { WindUnit } from "@/lib/units";
 import { unitLabel } from "@/lib/units";
-import { ktColor } from "@/lib/palette";
-import { WindArrow, WindowLine, TrendMark, fmtWind } from "./ui";
+import { fmtDayMonth, fmtWeekday, noonOf } from "@/lib/dates";
+import { WindTile, fmtWind, hourOf } from "./ui";
+
+// Nur Änderungen zeigen — „stabil" ist der Normalfall.
+const TREND_SYM = { steigt: "↗", fällt: "↘" } as const;
 
 /**
- * Tageskarten: Hauptaussage ist das beste fahrbare Fenster des Tages. Darunter der
- * Tages-Wind (Ø stärkste 3 Tageslicht-Stunden), die Modell-Spitze und der Trend seit gestern.
- * Tage, für die nur noch globale Modelle rechnen, treten optisch zurück.
+ * Tagesleiste: je Tag eine schmale Spalte — Wochentag, Datum, Tages-Wind als Kachel (Ø der
+ * 3 stärksten Tageslicht-Stunden, dieselben Farben wie das Raster) und, falls es eins gibt, das
+ * beste Fahrfenster. Früher große Karten, die meist „kein Fahrfenster" sagten und von denen am
+ * Handy zwei nebeneinander passten. Tage, für die nur noch globale Modelle rechnen, treten
+ * zurück; die Einzelheiten (Böen, Modell-Spitze, Trend) stehen im Tag-Reiter.
  */
 export default function DailyStrip({
   days,
@@ -23,64 +28,58 @@ export default function DailyStrip({
 }) {
   if (!days.length) return null;
   const shown = days.slice(0, 16);
+  const u = unitLabel(unit);
   return (
     <div className="border-y border-border-soft bg-[color:var(--color-bg-2)]/40 px-4 py-3 sm:px-5">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="label">Tage · bestes Fahrfenster</span>
-        <span className="text-[11px] text-faint">tippen für Details</span>
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="label">Tage</span>
+        <span className="text-[11px] text-faint">Tages-Wind (Ø stärkste 3 h) · Tippen öffnet den Tag</span>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex gap-1 overflow-x-auto pb-1">
         {shown.map((d) => {
-          const color = ktColor(d.peak);
+          const sec = noonOf(d.day);
+          const wd = new Date(sec * 1000).getUTCDay();
+          const we = wd === 0 || wd === 6;
           const active = activeDay === d.day;
-          const extra = d.windows.length - 1;
+          const tr = d.trend && d.trend.state !== "stabil" ? d.trend : null;
+          const title = [
+            `${d.label}: ${fmtWind(d.peak, unit)} ${u}, Böen ${fmtWind(d.gust, unit)} ${u}`,
+            d.best ? `bestes Fenster ${hourOf(d.best.start)}–${hourOf(d.best.end)} Uhr` : "kein Fahrfenster",
+            tr ? `Tages-Wind ${tr.state} ${tr.since}` : null,
+            d.globalOnly ? "nur globale Modelle — unsicher" : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
             <button
               key={d.day}
               type="button"
               onClick={() => onSelect?.(d.day)}
-              className="w-[152px] shrink-0 rounded-xl border p-2.5 text-left transition-colors hover:border-accent sm:w-auto sm:min-w-[168px] sm:flex-1"
+              className="flex w-[54px] shrink-0 flex-col items-center gap-1 rounded-lg border px-1 pb-1.5 pt-1 text-center transition-colors hover:border-accent sm:w-auto sm:min-w-[54px] sm:flex-1"
               style={{
-                background: active ? "var(--tint-accent)" : d.best ? "var(--tint-good)" : "var(--tint-neutral)",
-                borderColor: active ? "var(--color-accent)" : d.best ? "var(--tint-good-line)" : "var(--color-border)",
+                background: active ? "var(--tint-accent)" : we ? "var(--tint-neutral)" : "transparent",
+                borderColor: active ? "var(--color-accent)" : "var(--color-border-soft)",
                 cursor: onSelect ? "pointer" : "default",
-                opacity: d.globalOnly ? 0.6 : 1,
+                opacity: d.globalOnly ? 0.55 : 1,
               }}
-              title={d.globalOnly ? "Nur noch globale Modelle (IFS/GFS/ICON) — Vorhersage unsicher" : undefined}
+              title={title}
             >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="whitespace-nowrap text-xs font-600 text-ink">{d.label}</span>
-                <TrendMark trend={d.trend} unit={unit} compact />
-              </div>
-
-              <div className="mt-1 min-h-[2.5rem] text-[12px] leading-snug">
-                {d.best ? (
-                  <>
-                    <WindowLine w={d.best} unit={unit} compact />
-                    {extra > 0 && <span className="ml-1 text-[10px] text-faint">+{extra} weiteres</span>}
-                  </>
-                ) : (
-                  <span className="text-muted">kein Fahrfenster</span>
+              <span className="whitespace-nowrap text-[11px] leading-tight text-ink" style={{ fontWeight: we ? 700 : 600 }}>
+                {fmtWeekday(sec)}
+                {tr && <span className="ml-0.5 font-500">{TREND_SYM[tr.state as "steigt" | "fällt"]}</span>}
+              </span>
+              <span className="text-[10px] leading-tight text-muted">{fmtDayMonth(sec)}</span>
+              <WindTile kt={d.peak} unit={unit} className="w-[34px] font-mono text-[12px] leading-[20px]" />
+              <span className="h-[15px] whitespace-nowrap text-[10px] leading-[15px]">
+                {d.best && (
+                  <span
+                    className="rounded-full px-1 text-ink"
+                    style={{ background: "var(--tint-good)", boxShadow: "inset 0 0 0 1px var(--tint-good-line)" }}
+                  >
+                    {hourOf(d.best.start)}–{hourOf(d.best.end)}
+                  </span>
                 )}
-              </div>
-
-              <div className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-[11px] text-muted">
-                <WindArrow dir={d.dir} kt={d.peak} size={13} />
-                <span className="font-display text-base font-700" style={{ color }}>
-                  {fmtWind(d.peak, unit)}
-                </span>
-                <span>{unitLabel(unit)}</span>
-                <span>· Böen {fmtWind(d.gust, unit)}</span>
-              </div>
-              {d.modelPeak != null && d.peak != null && d.modelPeak - d.peak >= 1.5 && (
-                <div
-                  className="text-[11px] text-faint"
-                  title="Gewichteter Median der Tages-Spitzen der einzelnen Modelle — unabhängig davon, zu welcher Stunde jedes Modell sie sieht"
-                >
-                  Modell-Spitze bis {fmtWind(d.modelPeak, unit)} {unitLabel(unit)}
-                </div>
-              )}
-              {d.globalOnly && <div className="mt-0.5 text-[10px] text-faint">nur globale Modelle</div>}
+              </span>
             </button>
           );
         })}

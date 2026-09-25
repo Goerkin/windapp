@@ -11,8 +11,10 @@ Erfassung **und** Lernen laufen als Databricks-Jobs, unabhängig von jeder Oberf
 Next.js-App ist eine reine Leseansicht (gehostet auf Vercel) und jederzeit entbehrlich — die
 Datenbasis lernt weiter.
 
-- **Übersicht**: beide Spots, Wind jetzt (gemessen), gemessene Wassertemperatur, nächste
-  Fahrfenster und ein Windguru-artiges Kachel-Raster bis zum übernächsten Wochenende
+- **Übersicht**: die Antwort zuerst (geht heute/morgen etwas?), je Spot Wind jetzt (gemessen),
+  gemessene Wassertemperatur und nächste Fahrfenster, darunter ein gemeinsames Windguru-artiges
+  Kachel-Raster für beide Spots bis zum übernächsten Wochenende — Farbe erst dort, wo es fahrbar
+  wird
 - **Verlauf**: Konsens-Prognose, Böen, Messung, Prognose von vor 24 h, Kurzfrist-Korrektur,
   Fahrfenster, Wahrscheinlichkeit je Stunde
 - **Analyse** (`/analyse`): alle Einzelmodelle, die Aufschlüsselung jeder Konsens-Stunde
