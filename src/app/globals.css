@@ -24,14 +24,18 @@
   --color-muted: #5b6880;
   --color-faint: #8894a9;
 
-  --color-accent: #0e7490;
-  --color-accent-dim: #22d3ee;
+  /* Bedienung (aktive Tabs, Hover, Auswahl) — bewusst NEUTRAL. Cyan/Türkis ist Datenfarbe
+     („fahrbar", Windlinie); früher teilten sich beide dieselbe Farbe, und man konnte
+     Schalter und Daten nicht auseinanderhalten. */
+  --color-accent: #1e293b;
   --color-amber: #b45309;
 
   /* ── Wind-Skala (Knoten) — dieselbe Reihenfolge in beiden Themen, nur
         abgedunkelt, damit sie auf Weiß als Text lesbar bleibt. ── */
   --wg-grey: #5b6880;
-  --wg-blue: #2563eb;
+  /* „knapp" (10–13 kn) bewusst entsättigt: der Sprung zu „fahrbar" (≥ 13 kn) ist die
+     wichtigste Stufe und soll auf einen Blick die deutlichste sein. */
+  --wg-blue: #56708f;
   --wg-teal: #0891b2;
   --wg-green: #16a34a;
   --wg-amber: #b45309;
@@ -50,11 +54,16 @@
   /* ── Zarte Einfärbungen (Kachel-/Zeilenhintergründe). Als Variable, weil
         „weiß mit 1.5 % Deckkraft" auf hellem Grund nichts ergibt. ── */
   --tint-neutral: rgba(12, 22, 38, 0.03);
-  --tint-accent: rgba(14, 116, 144, 0.08);
+  --tint-accent: rgba(30, 41, 59, 0.07);
   --tint-good: rgba(22, 163, 74, 0.08);
   --tint-good-line: rgba(22, 163, 74, 0.35);
   --tint-up: #15803d;
   --tint-down: #be123c;
+
+  /* ── Modell-Kategorien (Analyse) ── */
+  --cat-meso: #0e7490;
+  --cat-regional: #7c3aed;
+  --cat-global: #b45309;
 
   --radius-card: 16px;
   --radius-chip: 8px;
@@ -80,12 +89,11 @@
     --color-muted: #8a93a8;
     --color-faint: #5b647c;
 
-    --color-accent: #22d3ee;
-    --color-accent-dim: #0e7490;
+    --color-accent: #dbe3f0;
     --color-amber: #f59e0b;
 
     --wg-grey: #64748b;
-    --wg-blue: #3b82f6;
+    --wg-blue: #7c93b8;
     --wg-teal: #22d3ee;
     --wg-green: #22c55e;
     --wg-amber: #f59e0b;
@@ -98,11 +106,15 @@
     --chart-tooltip-bg: rgba(11, 17, 32, 0.95);
 
     --tint-neutral: rgba(255, 255, 255, 0.015);
-    --tint-accent: rgba(34, 211, 238, 0.06);
+    --tint-accent: rgba(219, 227, 240, 0.07);
     --tint-good: rgba(34, 197, 94, 0.05);
     --tint-good-line: rgba(34, 197, 94, 0.35);
     --tint-up: #34d399;
     --tint-down: #fb7185;
+
+    --cat-meso: #22d3ee;
+    --cat-regional: #a78bfa;
+    --cat-global: #f59e0b;
   }
 }
 
@@ -174,7 +186,6 @@ body {
   .tab-btn[data-active="true"] {
     color: var(--color-panel);
     background: var(--color-accent);
-    box-shadow: 0 0 20px -6px var(--color-accent);
   }
 
   .seg {
@@ -186,6 +197,7 @@ body {
     border: 1px solid var(--color-border);
   }
   .seg > button {
+    white-space: nowrap;
     padding: 0.25rem 0.65rem;
     border-radius: 999px;
     font-size: 0.75rem;
@@ -196,6 +208,16 @@ body {
     color: var(--color-ink);
     background: var(--color-panel);
     border: 1px solid var(--color-border);
+  }
+
+  /* Abschnitts-Überschrift. Nur für Abschnitte — Feldbeschriftungen bleiben in normaler
+     Schreibung, sonst stehen zu viele gleichrangige Versal-Zeilen untereinander. */
+  .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
   }
 
   .live-dot {
@@ -224,7 +246,11 @@ body {
       palette.ts). CSS schlägt Präsentationsattribute, also gewinnt das hier —
       ohne !important und ohne Änderung an den Chart-Komponenten. Semantische
       Farben (Wind-Skala, Modell-Linien) bleiben absichtlich unberührt. ── */
+/* Recharts 3 setzt die Tick-Beschriftung als text.recharts-cartesian-axis-tick-value (nicht mehr
+   unter g.recharts-cartesian-axis-tick) — ohne diese Klasse blieben die Achsen im hellen Thema
+   fast weiß auf weiß. */
 .recharts-cartesian-axis-tick text,
+.recharts-cartesian-axis-tick-value,
 .recharts-label,
 .ref-chrome text {
   fill: var(--chart-axis);
@@ -235,6 +261,10 @@ body {
 .recharts-cartesian-axis-tick-line,
 .ref-chrome .recharts-reference-line-line {
   stroke: var(--chart-axis-line);
+}
+/* „Jetzt"-Linie in allen Diagrammen: neutral, nicht in einer Datenfarbe. */
+.ref-now .recharts-reference-line-line {
+  stroke: var(--color-muted);
 }
 .recharts-cartesian-grid line {
   stroke: var(--chart-grid);

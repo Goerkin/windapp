@@ -99,7 +99,41 @@ export function DeltaBadge({
 }
 
 export function Compass({ dir }: { dir: number | null }) {
-  return <span className="font-mono">{compass(dir)}</span>;
+  return <span className="tabular-nums">{compass(dir)}</span>;
+}
+
+/**
+ * Wahrscheinlichkeit als kleiner Füllbalken + Zahl. Bewusst NEUTRAL (Tinte, keine Windfarbe):
+ * Orange/Gelb/Grün bedeuten in der Windskala „kräftig/zu viel/gut" — als Farbe für Prozente
+ * hätten sie zwei Bedeutungen gleichzeitig.
+ */
+export function ProbMeter({ p, title }: { p: number; title?: string }) {
+  const pct = Math.max(0, Math.min(100, Math.round(p * 100)));
+  return (
+    <span className="inline-flex items-center gap-1" title={title}>
+      <span className="relative inline-block h-1.5 w-7 overflow-hidden rounded-full bg-[color:var(--color-border)]">
+        <span className="absolute inset-y-0 left-0 rounded-full bg-ink" style={{ width: `${pct}%`, opacity: 0.35 + 0.65 * (pct / 100) }} />
+      </span>
+      <span className="tabular-nums text-body">{pct} %</span>
+    </span>
+  );
+}
+
+/** Kleine Symbole im Stil der übrigen Linien-Icons (statt Emoji, die je Gerät anders aussehen). */
+export function WaveIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className="inline-block align-[-1px]">
+      <path d="M2 9c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 16c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2" style={{ stroke: "var(--wg-teal)" }} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+export function SunIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className="inline-block align-[-1px]">
+      <circle cx="12" cy="12" r="4" style={{ stroke: "var(--color-muted)" }} strokeWidth="2" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" style={{ stroke: "var(--color-muted)" }} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 const _hourOnly = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" });
@@ -120,7 +154,6 @@ export function WindowLine({
   const h = (s: number) => String(parseInt(_hourOnly.format(new Date(s * 1000)), 10));
   const lo = fmtWind(w.lo, unit);
   const hi = fmtWind(w.hi, unit);
-  const pct = Math.round(w.prob * 100);
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       <span className="font-600 text-ink">
@@ -129,24 +162,21 @@ export function WindowLine({
         {!compact && " Uhr"}
       </span>
       <span className="text-faint">·</span>
-      <span className="font-mono" style={{ color: ktColor((w.lo + w.hi) / 2) }}>
+      <span className="font-600 tabular-nums" style={{ color: ktColor((w.lo + w.hi) / 2) }}>
         {lo === hi ? lo : `${lo}–${hi}`}
       </span>
       <span className="text-muted">{unitLabel(unit)}</span>
       <span className="text-faint">·</span>
       <span className="inline-flex items-center gap-0.5">
         <WindArrow dir={w.dir} kt={(w.lo + w.hi) / 2} size={12} />
-        <span className="font-mono text-body">{compass(w.dir)}</span>
+        <span className="text-body">{compass(w.dir)}</span>
         {w.dirQ === "ok" && <span title="Richtung nur bedingt geeignet" className="text-[color:var(--wg-amber)]">!</span>}
       </span>
       <span className="text-faint">·</span>
-      <span
-        className="font-600"
-        style={{ color: pct >= 75 ? "#34d399" : pct >= 55 ? "#fbbf24" : "#fb923c" }}
+      <ProbMeter
+        p={w.prob}
         title="Durchschnitt der stündlichen Wahrscheinlichkeiten für den Mindestwind im Fenster. Dass es über das GANZE Fenster reicht, ist weniger wahrscheinlich."
-      >
-        Ø {pct} %
-      </span>
+      />
     </span>
   );
 }
@@ -154,12 +184,12 @@ export function WindowLine({
 /** „stabil / steigt / fällt seit gestern" als kleine Markierung. */
 export function TrendMark({ trend, unit, compact = false }: { trend: TrendState | null; unit: WindUnit; compact?: boolean }) {
   if (!trend) return null;
-  const color = trend.state === "stabil" ? "#8a93a8" : trend.state === "steigt" ? "#34d399" : "#fb7185";
+  const color = trend.state === "stabil" ? "var(--color-muted)" : trend.state === "steigt" ? "var(--tint-up)" : "var(--tint-down)";
   const sym = trend.state === "stabil" ? "→" : trend.state === "steigt" ? "↗" : "↘";
   const v = convertWind(Math.abs(trend.delta), unit);
   return (
     <span
-      className="text-[11px]"
+      className="whitespace-nowrap text-[11px]"
       style={{ color }}
       title={`Tages-Wind ${trend.state} ${trend.since} (${trend.delta > 0 ? "+" : trend.delta < 0 ? "−" : "±"}${v ?? 0} ${unitLabel(unit)})`}
     >
@@ -169,7 +199,7 @@ export function TrendMark({ trend, unit, compact = false }: { trend: TrendState 
   );
 }
 
-/** Gemessene Wassertemperatur(en) — „🌊 17.8° Nordsee · 18.0° Grevelingen"; sonst Windguru-Schätzung. */
+/** Gemessene Wassertemperatur(en) — „≈ 17.8° Nordsee · 18.0° Grevelingen"; sonst Windguru-Schätzung. */
 export function WaterTemps({
   water,
   fallback,
@@ -182,13 +212,13 @@ export function WaterTemps({
   if (!water.length) {
     return fallback != null ? (
       <span className={className} title="Schätzung von Windguru (keine aktuelle Messung)">
-        🌊 ~{fallback}°
+        <WaveIcon /> ~{fallback}°
       </span>
     ) : null;
   }
   return (
     <span className={className}>
-      🌊{" "}
+      <WaveIcon />{" "}
       {water.map((w, i) => (
         <span key={w.name} title={`gemessen ${relTime(w.obsTime)} · Rijkswaterstaat`}>
           {i > 0 && " · "}

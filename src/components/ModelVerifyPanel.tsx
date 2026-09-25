@@ -11,10 +11,10 @@ import {
 } from "recharts";
 import type { SpotPayload, ModelVerification } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
-import { PALETTE, MODEL_COLORS } from "@/lib/palette";
+import { PALETTE, MODEL_COLORS, stationColor } from "@/lib/palette";
 import { fmtTime, relTime, windBands } from "./ui";
 
-const MEASURED = "#f472b6";
+const MEASURED = stationColor(0); // wie die Messlinie im Verlauf
 
 export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; unit: WindUnit }) {
   const [data, setData] = useState<ModelVerification | null>(null);
@@ -125,7 +125,7 @@ export default function ModelVerifyPanel({ spot, unit }: { spot: SpotPayload; un
       </div>
 
       {loading && <p className="text-sm text-muted">lädt…</p>}
-      {error && <p className="text-sm" style={{ color: "#fb7185" }}>Fehler: {error}</p>}
+      {error && <p className="text-sm" style={{ color: "var(--wg-red)" }}>Fehler: {error}</p>}
 
       {!loading && !error && data && chart.length > 0 && (
         <>

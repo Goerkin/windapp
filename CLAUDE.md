@@ -39,7 +39,7 @@ Scheitert `create-project`: Free Edition erlaubt nur ein Lakebase-Projekt je Acc
 | `src/lib/data.ts` | Baut das Dashboard-Payload (`SpotPayload`) |
 | `src/lib/kite.ts` | Client-Logik: Schwellen (fix Twintip 80 kg), Richtung, Tageslicht, P(≥13 kn), Fahrfenster, Tages-Zusammenfassung |
 | `public/sw.js` + `src/app/manifest.ts` | PWA: installierbar auf dem Homescreen, zeigt ohne Netz den zuletzt geladenen Stand. Der Service Worker wird in `ServiceWorker.tsx` nur im Produktions-Build angemeldet. Ein Deploy erreicht die installierte App von allein (HTML/Daten immer zuerst aus dem Netz, JS-Dateien tragen den Inhalt im Namen); ein geänderter `sw.js` installiert sich ebenfalls selbst — `VERSION` steuert nur das Verwerfen der alten Caches, und zwar erst beim übernächsten Öffnen. Symbole in `public/` sind eingecheckt, erzeugt von `scripts/make-icons.mjs`. |
-| `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx` → `SpotOverview` (+ `ForecastGrid`) → `SpotPanel` (Tabs Verlauf/Tag). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel` (+ `HourBreakdown`: Rechnung einer Konsens-Stunde) / `AccuracyPanel` (+ `LearnedPanel`: gelernte Korrekturen). |
+| `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx`: Übersicht = `Verdict` (Antwortzeile über beide Spots) + `SpotOverview` (+ `ForecastGrid`); ein Tipp öffnet `SpotPanel` (Tabs Verlauf/Tag) als eigene Ansicht, per `history.pushState` mit `#slug` (Zurück-Geste führt zur Übersicht, Direktlink geht). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel` (+ `HourBreakdown`: Rechnung einer Konsens-Stunde) / `AccuracyPanel` (+ `LearnedPanel`: gelernte Korrekturen). |
 | `prisma/schema.prisma` | Tabellen: Spot, Snapshot, ModelRun, SnapshotRun, StationObs, WaterTemp, ModelSkill, SpotStat (+ ModelSeries: ALT, bis zur Umstellung, s. DATABRICKS.md) |
 | `scripts/migrate-runs.mjs` | Einmalige Umstellung ModelSeries → ModelRun (idempotent; `--drop-legacy` danach) |
 
@@ -104,6 +104,10 @@ node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach 
 - **Lernen/Statistik**: Verifikation immer out-of-sample (nur Daten vor dem Prognosezeitpunkt).
   Wenig Daten → Shrinkage/Standardwerte, keine Overfits. Varianten erst ab genug Vergleichen
   wählen (`SELECT_MIN_N`).
+- **Farbbedeutungen trennen**: Windfarben (`--wg-*`) nur für Windstärke; Bedienung (aktive Tabs,
+  Hover) über das neutrale `--color-accent`; Wahrscheinlichkeiten neutral (`ProbMeter`, Deckkraft),
+  nie in Wind-Tönen; Rot nur für „gefährlich/ablandig". Fenster > 5 Kalendertage voraus
+  (`NEAR_DAYS`) nur als Ausblick zeigen.
 - **Farben nie hart codieren.** Schwellen aus `TH` (kite.ts). Farben aus den CSS-Variablen in
   `globals.css` bzw. `ktColor()` (liefert `var(--wg-…)`, kippt mit hell/dunkel). `ktColorHex()`
   nur, wo eine Deckkraft angehängt wird. Achtung: ein SVG-**Präsentationsattribut**
@@ -124,6 +128,9 @@ node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach 
 - Der Trend lädt frühere Datenstände per Zeitstempel (nicht „letzte N Snapshots" — bei
   30-min-Takt reicht das nicht bis 7 Tage zurück).
 - Recharts: Mess-/Prognosezeilen im selben Datensatz → `connectNulls` an den Linien.
+- Recharts 3 rendert Achsen-Beschriftungen als `text.recharts-cartesian-axis-tick-value` (nicht
+  unter `g.recharts-cartesian-axis-tick`). Ohne diese Klasse in `globals.css` blieben sie im hellen
+  Thema beim SVG-Attribut `#eaeef7` — weiß auf weiß.
 - Hydration-Warnung „vor N min" beim Minutenwechsel ist harmlos (relTime). Ursache sind
   `Date.now()`-Aufrufe im Render; ESLint meldet das als 12 Warnungen (`react-hooks/purity`).
 - **Anteil über das ganze Raster ≠ Wichtigkeit.** `ModelView.weight` summiert die Gewichte über

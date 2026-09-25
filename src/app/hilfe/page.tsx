@@ -98,15 +98,21 @@ export default function HelpPage() {
       </Section>
 
       <Section id="anzeige" title="Was siehst du wo?">
-        <Item name="Übersicht (oben)">
-          Je Spot: Wind jetzt (gemessen, sonst Prognose), die gemessene Wassertemperatur und die nächsten
-          Fahrfenster. Darunter das <b>Kachel-Raster</b> bis zum übernächsten Wochenende — Wochenenden gelb
-          umrahmt. Tippen auf einen Tag öffnet die Tagesansicht; die Raster beider Spots scrollen gemeinsam.
+        <Item name="Kurzfassung (ganz oben)">
+          Die Antwort über beide Spots: was heute oder morgen geht — sonst die nächste Chance in den nächsten
+          Tagen bzw. wo es am meisten weht. Fenster weiter als 5 Tage voraus stehen nur als <b>Ausblick</b>{" "}
+          darunter: dort rechnen meist nur noch die groben globalen Modelle.
+        </Item>
+        <Item name="Übersicht">
+          Je Spot: Wind jetzt (gemessen, sonst Prognose), die gemessene Wassertemperatur und die Fahrfenster
+          der nächsten 5 Tage. Darunter das <b>Kachel-Raster</b> bis zum übernächsten Wochenende — Wochenenden
+          umrahmt. Tippen auf den Spot, ein Fenster oder einen Tag öffnet die Detailansicht (Zurück führt zur
+          Übersicht); die Raster beider Spots scrollen gemeinsam.
         </Item>
         <Item name="Kachel-Raster">
           Spalten = Tageslicht-Stunden im 3-h-Takt. Zeilen: <b>Wind</b> und <b>Böen</b> (farbig, s. u.),{" "}
           <b>Dir</b> = Windrichtung (rot hinterlegt = ablandig/ungeeignet, gelb = bedingt), <b>%</b> =
-          Wahrscheinlichkeit für mindestens {TH.min} kn, <b>mm</b> = Regen (⚡ = Verdacht auf Schauerböen),{" "}
+          Wahrscheinlichkeit für mindestens {TH.min} kn (je sicherer, desto kräftiger), <b>mm</b> = Regen (⚡ = Verdacht auf Schauerböen),{" "}
           <b>°C</b> = Luft. Grüner Strich über der Stunde = fahrbar. Blasse Tage = nur noch grobe globale
           Modelle, entsprechend unsicher. Pfeil neben dem Datum = Tageswind seit gestern stabil / steigend /
           fallend.
@@ -114,15 +120,18 @@ export default function HelpPage() {
         <Item name="Fahrfenster">
           z. B. „Do. 24.9. 8–16 Uhr · 14–19 kn · NNW · Ø 61 %“: Zeitraum, schwächste–stärkste Stunde,
           mittlere Richtung („!“ = nur bedingt geeignet) und die <b>durchschnittliche</b> stündliche
-          Wahrscheinlichkeit. Dass es über das ganze Fenster hält, ist etwas weniger wahrscheinlich.
+          Wahrscheinlichkeit (kleiner Balken). Dass es über das ganze Fenster hält, ist etwas weniger
+          wahrscheinlich. Prozente sind bewusst nicht farbig — die Farben gehören der Windstärke.
         </Item>
         <Item name="Verlauf">
-          <b>Türkis</b> = Konsens-Prognose, <b>lila gestrichelt</b> = Böen, <b>pink</b> = gemessen,{" "}
+          <b>Türkis</b> = Konsens-Prognose, <b>lila gestrichelt</b> = Böen, <b>pink</b> = gemessen
+          (geglättet; blass dahinter die einzelnen 10-min-Werte),{" "}
           <b>hellgrau gestrichelt</b> = die Prognose von vor 24 h (so siehst du, wie gut sie zuletzt lag),{" "}
           <b>gelb</b> = nach der aktuellen Messung korrigierte nächste Stunden, <b>grüne Fläche</b> =
           Fahrfenster, <b>grün gestrichelte Linie</b> = Mindestwind. Die dezenten <b>waagerechten
           Farbbänder</b> im Hintergrund entsprechen den Kachelfarben (knapp / fahrbar / gut / kräftig / zu viel)
-          — das gilt für alle Wind-Grafiken. Darunter die Wahrscheinlichkeit je Stunde. Aufklappbar: wie sich
+          — das gilt für alle Wind-Grafiken. Darunter ein Streifen mit der Windrichtung (Pfeile) und der
+          Wahrscheinlichkeit je Stunde (je dunkler, desto sicherer; grün = Fahrfenster). Aufklappbar: wie sich
           die Vorhersage über die letzten Datenstände verändert hat.
         </Item>
         <Item name="Tag">Stundenverlauf, Fenster und Tabelle (2-h-Raster) für einen Tag im Tageslicht.</Item>

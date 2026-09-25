@@ -4,19 +4,9 @@ import { type WindUnit } from "@/lib/units";
 import VerificationPanel from "./VerificationPanel";
 import ModelVerifyPanel from "./ModelVerifyPanel";
 import MethodPanel from "./MethodPanel";
+import { CAT_LABEL, catColor } from "@/lib/palette";
 import LearnedPanel from "./LearnedPanel";
 
-// Kategorie-Farben (identisch zu ModelPanel).
-const CAT_COLOR: Record<string, string> = {
-  mesoscale: "#22d3ee",
-  "regional-hi": "#a78bfa",
-  global: "#f59e0b",
-};
-const CAT_LABEL: Record<string, string> = {
-  mesoscale: "hochauflösend",
-  "regional-hi": "regional",
-  global: "global",
-};
 
 // Fehlermaße immer in kn oder m/s (Beaufort ist als Fehlermaß nicht sinnvoll).
 function unitOf(unit: WindUnit) {
@@ -74,7 +64,7 @@ export default function AccuracyPanel({ spot, unit }: { spot: SpotPayload; unit:
               </thead>
               <tbody>
                 {skill.map((s, i) => {
-                  const color = CAT_COLOR[s.category] ?? "#64748b";
+                  const color = catColor(s.category);
                   return (
                     <tr key={s.idModel} className="border-t border-border-soft align-middle">
                       <td className="py-2 pr-3 font-mono text-muted">{i + 1}</td>
@@ -83,7 +73,7 @@ export default function AccuracyPanel({ spot, unit }: { spot: SpotPayload; unit:
                           <span className="font-600 text-ink">{s.label}</span>
                           <span
                             className="chip"
-                            style={{ color, borderColor: color + "40" }}
+                            style={{ color, borderColor: catColor(s.category, 0.25) }}
                             title={CAT_LABEL[s.category] ?? s.category}
                           >
                             {s.resolution != null ? `${s.resolution} km` : CAT_LABEL[s.category]}

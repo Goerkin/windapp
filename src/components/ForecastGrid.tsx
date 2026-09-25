@@ -10,12 +10,14 @@ const STEP_H = 3;
 const FIRST_H = 8;
 // Immer bis einschließlich zum zweiten kommenden Sonntag zeigen (zwei Wochenenden).
 const WEEKENDS = 2;
-const WE_COLOR = "rgba(250,204,21,.55)";
-const WE_BG = "rgba(250,204,21,.045)";
+// Wochenende: kräftiger neutraler Rahmen — früher gelb, aber Amber heißt in den Kacheln
+// „kräftig" und stand dann oft direkt daneben.
+const WE_COLOR = "color-mix(in srgb, var(--color-ink) 45%, transparent)";
+const WE_BG = "var(--tint-accent)";
 
 const weekday = (day: string) => new Date(`${day}T12:00:00Z`).getUTCDay(); // 0 = So, 6 = Sa
 const TREND_SYM = { stabil: "→", steigt: "↗", fällt: "↘" } as const;
-const TREND_COLOR = { stabil: "#8a93a8", steigt: "#34d399", fällt: "#fb7185" } as const;
+const TREND_COLOR = { stabil: "var(--color-muted)", steigt: "var(--tint-up)", fällt: "var(--tint-down)" } as const;
 
 /**
  * Kompakte Windguru-artige Tabelle: je Tag eine Spaltengruppe, je Stunde eine Spalte mit
@@ -112,7 +114,7 @@ export default function ForecastGrid({
     kt == null ? (
       <span className="text-faint">–</span>
     ) : (
-      <span className="block rounded-[3px] font-600" style={{ background: ktColorHex(kt) + "d9", color: "#0b1220" }}>
+      <span className="block rounded-[3px] font-600" style={{ background: ktColorHex(kt) + "d9", color: "#0b1220" /* dunkle Schrift auf gesättigter Kachel, in beiden Themen */ }}>
         {fmtWind(kt, unit)}
       </span>
     );
@@ -156,7 +158,7 @@ export default function ForecastGrid({
                   >
                     <div
                       className="flex items-center gap-1 whitespace-nowrap text-[10px] font-600"
-                      style={{ color: we ? "var(--wg-amber)" : "var(--color-ink)" }}
+                      style={{ color: "var(--color-ink)", fontWeight: we ? 700 : 600 }}
                     >
                       {g.d.label.replace(/\.$/, "")}
                       {tr && <span style={{ color: TREND_COLOR[tr.state] }}>{TREND_SYM[tr.state]}</span>}
@@ -194,7 +196,11 @@ export default function ForecastGrid({
                 className="flex h-[20px] items-center justify-center rounded-[3px]"
                 style={{
                   background:
-                    h.dirQ === "bad" ? "rgba(239,68,68,.25)" : h.dirQ === "ok" ? "rgba(245,158,11,.2)" : "transparent",
+                    h.dirQ === "bad"
+                      ? "color-mix(in srgb, var(--wg-red) 25%, transparent)"
+                      : h.dirQ === "ok"
+                        ? "color-mix(in srgb, var(--wg-amber) 18%, transparent)"
+                        : "transparent",
                 }}
                 title={h.dirQ ? `${h.dir ?? "–"}° · ${DIR_LABEL[h.dirQ]}` : undefined}
               >
@@ -209,7 +215,13 @@ export default function ForecastGrid({
             (h) => {
               const p = h.pMin == null ? null : Math.round(h.pMin * 100);
               return (
-                <span style={{ color: p == null ? undefined : p >= 70 ? "var(--wg-green)" : p >= 45 ? "var(--wg-amber)" : "var(--color-faint)" }}>
+                // Neutral: je sicherer, desto kräftiger — keine Windfarben für Prozente.
+                <span
+                  style={{
+                    color: p == null ? undefined : p >= 70 ? "var(--color-ink)" : p >= 45 ? "var(--color-body)" : "var(--color-faint)",
+                    fontWeight: p != null && p >= 70 ? 700 : undefined,
+                  }}
+                >
                   {p ?? "–"}
                 </span>
               );
@@ -223,7 +235,7 @@ export default function ForecastGrid({
               const mm = pointAt.get(h.t)?.precip ?? null;
               if (h.squall) return <span title="Schauerböen-Verdacht">⚡</span>;
               return mm != null && mm >= 0.2 ? (
-                <span className="text-[#60a5fa]">{mm >= 1 ? Math.round(mm) : mm.toFixed(1).replace(/^0/, "")}</span>
+                <span className="font-600 text-body">{mm >= 1 ? Math.round(mm) : mm.toFixed(1).replace(/^0/, "")}</span>
               ) : (
                 <span className="text-faint">·</span>
               );

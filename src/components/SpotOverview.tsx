@@ -7,9 +7,11 @@ import { ktColor } from "@/lib/palette";
 import { ratingLabel, dirQuality, dirHint, DIR_LABEL, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { WindArrow, Compass, WindowLine, WaterTemps, fmtWind } from "./ui";
 import ForecastGrid from "./ForecastGrid";
+import { NEAR_DAYS, lastNearDay } from "./Verdict";
 
-// Wie viele kommende Fenster je Spot in der Übersicht stehen.
+// Wie viele kommende Fenster „in Sicht" je Spot in der Übersicht stehen.
 const MAX_WINDOWS = 3;
+const outlookFmt = new Intl.DateTimeFormat("de-DE", { timeZone: "Europe/Amsterdam", weekday: "short", day: "numeric", month: "numeric" });
 
 /**
  * Startansicht: je Spot eine Karte in voller Breite mit Wind jetzt (Messung, sonst Prognose),
@@ -21,14 +23,12 @@ export default function SpotOverview({
   evals,
   th,
   unit,
-  activeId,
   onOpen,
 }: {
   spots: SpotPayload[];
   evals: Map<number, { hours: HourEval[]; days: DaySummary[] }>;
   th: Thresholds;
   unit: WindUnit;
-  activeId: number | null;
   onOpen: (id: number, day?: string | null) => void;
 }) {
   const nowSec = Date.now() / 1000;
@@ -66,24 +66,23 @@ export default function SpotOverview({
     <div className="mb-4 grid gap-3 sm:mb-6">
       {spots.map((s) => {
         const ev = evals.get(s.id);
-        const windows = (ev?.days ?? [])
-          .flatMap((d) => d.windows)
-          .filter((w) => w.end > nowSec)
-          .slice(0, MAX_WINDOWS);
+        const upcoming = (ev?.days ?? []).flatMap((d) => d.windows).filter((w) => w.end > nowSec);
+        // In Sicht (≤ NEAR_DAYS) groß; alles dahinter nur als Ausblick-Zeile — ein Fenster in
+        // zwei Wochen, das nur die globalen Modelle sehen, ist nicht so wichtig wie eins morgen.
+        const lastNear = lastNearDay(nowSec);
+        const windows = upcoming.filter((w) => w.day <= lastNear).slice(0, MAX_WINDOWS);
+        const outlook = upcoming
+          .filter((w) => w.day > lastNear)
+          .filter((w, i, arr) => arr.findIndex((x) => x.day === w.day) === i);
         const st = s.stations.find((x) => x.windAvg != null && (x.ageMin ?? 999) <= 90);
         const nowKt = st?.windAvg ?? s.now?.windspd ?? null;
         const nowDir = st?.windDir ?? s.now?.winddir ?? null;
         const dq = dirQuality(nowDir, s.dirs);
         const hint = dirHint(nowDir, s.dirs);
-        const active = s.id === activeId;
-        const later = (ev?.days ?? []).filter((d) => d.best && d.best.start > (windows.at(-1)?.start ?? Infinity));
+        const moreNear = upcoming.filter((w) => w.day <= lastNear).length - windows.length;
 
         return (
-          <div
-            key={s.id}
-            className="panel min-w-0 p-4"
-            style={{ borderColor: active ? "var(--color-accent)" : undefined }}
-          >
+          <div key={s.id} className="panel min-w-0 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-6">
             <button type="button" onClick={() => onOpen(s.id)} className="flex w-full items-start justify-between gap-3 text-left lg:w-[380px] lg:shrink-0" style={{ cursor: "pointer" }}>
               <div>
@@ -93,7 +92,7 @@ export default function SpotOverview({
               </div>
               {nowKt != null && (
                 <div className="text-right">
-                  <div className="flex items-center justify-end gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                     <WindArrow dir={nowDir} kt={nowKt} size={18} />
                     <span className="font-display text-3xl font-700 leading-none" style={{ color: ktColor(nowKt) }}>
                       {fmtWind(nowKt, unit)}
@@ -111,7 +110,7 @@ export default function SpotOverview({
             </button>
 
             <div className="min-w-0 flex-1 border-t border-border-soft pt-2.5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-              <div className="mb-1.5 text-[11px] uppercase tracking-wider text-muted">Nächste Fahrfenster</div>
+              <div className="label mb-1.5">Fahrfenster in den nächsten {NEAR_DAYS} Tagen</div>
               {windows.length ? (
                 <ul className="grid gap-1.5 xl:grid-cols-2">
                   {windows.map((w) => (
@@ -120,23 +119,30 @@ export default function SpotOverview({
                         type="button"
                         onClick={() => onOpen(s.id, w.day)}
                         className="w-full rounded-lg border border-border-soft px-2.5 py-1.5 text-left text-sm hover:border-accent"
-                        style={{ cursor: "pointer", opacity: w.hiRes ? 1 : 0.7 }}
+                        style={{ cursor: "pointer" }}
                         title={w.hiRes ? undefined : "nur globale Modelle — noch unsicher"}
                       >
                         <WindowLine w={w} unit={unit} withDay />
-                        {!w.hiRes && <span className="ml-1.5 text-[10px] text-faint">nur globale Modelle</span>}
+                        {!w.hiRes && <span className="chip ml-1.5 align-middle text-faint">unsicher</span>}
                       </button>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted">
-                  Kein fahrbares Fenster in Sicht (Wind, Richtung, Tageslicht).
-                </p>
+                <p className="text-sm text-muted">Keins — zu wenig Wind, falsche Richtung oder dunkel.</p>
               )}
-              {later.length > 0 && windows.length >= MAX_WINDOWS && (
+              {moreNear > 0 && <p className="mt-1 text-[11px] text-faint">+ {moreNear} weitere</p>}
+              {outlook.length > 0 && (
                 <p className="mt-1.5 text-[11px] text-faint">
-                  + weitere Tage mit Fenstern: {later.map((d) => d.label.split(" ")[0]).join(", ")}
+                  Ausblick, noch unsicher:{" "}
+                  {outlook.slice(0, 4).map((w, i) => (
+                    <span key={w.start}>
+                      {i > 0 && " · "}
+                      <button type="button" onClick={() => onOpen(s.id, w.day)} className="underline decoration-dotted underline-offset-2 hover:text-ink">
+                        {outlookFmt.format(new Date(w.start * 1000)).replace(",", "")}
+                      </button>
+                    </span>
+                  ))}
                 </p>
               )}
             </div>

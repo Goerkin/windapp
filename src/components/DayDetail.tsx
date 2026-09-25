@@ -132,8 +132,13 @@ export default function DayDetail({
       {/* Fahrfenster des Tages */}
       {summary && (
         <div className="mb-3 rounded-xl border border-border-soft px-3 py-2">
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-wider text-muted">
-            <span>Fahrfenster (≥ {MIN_WINDOW_H} h am Stück, Tageslicht, Richtung ok, ≥ 50 % für {conv(th.min)} {unitLabel(unit)})</span>
+          <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2">
+            <span>
+              <span className="label">Fahrfenster</span>{" "}
+              <span className="text-[11px] text-faint">
+                ≥ {MIN_WINDOW_H} h am Stück, Tageslicht, Richtung ok, ≥ 50 % für {conv(th.min)} {unitLabel(unit)}
+              </span>
+            </span>
             <TrendMark trend={summary.trend} unit={unit} />
           </div>
           {summary.windows.length ? (
@@ -235,10 +240,12 @@ export default function DayDetail({
               <th className="py-1.5 pr-3 font-600">Wind</th>
               <th className="py-1.5 pr-3 font-600">Böen</th>
               <th className="py-1.5 pr-3 font-600">Richtung</th>
-              <th className="py-1.5 pr-3 font-600" title={`Wahrscheinlichkeit für ≥ ${th.min} kn`}>P ≥ {conv(th.min)}</th>
-              <th className="py-1.5 pr-3 font-600">Temp</th>
-              <th className="py-1.5 pr-3 font-600">Wolken</th>
-              <th className="py-1.5 pr-3 font-600">Regen</th>
+              <th className="whitespace-nowrap py-1.5 pr-3 font-600" title={`Wahrscheinlichkeit für mindestens ${conv(th.min)} ${unitLabel(unit)}`}>
+                ≥ {conv(th.min)}
+              </th>
+              <th className="py-1.5 pr-3 font-600">Luft</th>
+              <th className="hidden py-1.5 pr-3 font-600 sm:table-cell">Wolken</th>
+              <th className="hidden py-1.5 pr-3 font-600 sm:table-cell">Regen</th>
             </tr>
           </thead>
           <tbody>
@@ -246,7 +253,7 @@ export default function DayDetail({
               <tr
                 key={t}
                 className="border-t border-border-soft"
-                style={{ background: ev?.rideable ? "rgba(34,197,94,.06)" : undefined }}
+                style={{ background: ev?.rideable ? "var(--tint-good)" : undefined }}
               >
                 <td className="py-1.5 pr-3 font-mono text-body">{fmtTime(t)}</td>
                 <td className="py-1.5 pr-3 font-mono font-600" style={{ color: ktColor(p?.windspd ?? null) }}>
@@ -254,9 +261,9 @@ export default function DayDetail({
                 </td>
                 <td className="py-1.5 pr-3 font-mono text-body">{conv(p?.gust ?? null)}</td>
                 <td className="py-1.5 pr-3">
-                  <span className="inline-flex items-center gap-1 text-body">
+                  <span className="inline-flex items-center gap-1 whitespace-nowrap text-body">
                     <WindArrow dir={p?.winddir ?? null} kt={p?.windspd ?? null} size={13} />
-                    <span className="font-mono">{compass(p?.winddir ?? null)}</span>
+                    <span>{compass(p?.winddir ?? null)}</span>
                     {ev?.dirQ && ev.dirQ !== "good" && (
                       <span
                         title={DIR_LABEL[ev.dirQ]}
@@ -267,13 +274,13 @@ export default function DayDetail({
                     )}
                   </span>
                 </td>
-                <td className="py-1.5 pr-3 font-mono text-body">
+                <td className="whitespace-nowrap py-1.5 pr-3 font-mono text-body">
                   {ev?.pMin != null ? `${Math.round(ev.pMin * 100)} %` : "–"}
                   {ev?.squall && <span className="ml-1" title="Schauerböen-Verdacht">⚡</span>}
                 </td>
                 <td className="py-1.5 pr-3 text-body">{p?.tmp != null ? `${Math.round(p.tmp)}°` : "–"}</td>
-                <td className="py-1.5 pr-3 text-body">{p?.cloud != null ? `${p.cloud}%` : "–"}</td>
-                <td className="py-1.5 pr-3 text-body">{p?.precip != null && p.precip > 0 ? `${p.precip} mm` : "–"}</td>
+                <td className="hidden py-1.5 pr-3 text-body sm:table-cell">{p?.cloud != null ? `${p.cloud}%` : "–"}</td>
+                <td className="hidden py-1.5 pr-3 text-body sm:table-cell">{p?.precip != null && p.precip > 0 ? `${p.precip} mm` : "–"}</td>
               </tr>
             ))}
           </tbody>
@@ -283,9 +290,7 @@ export default function DayDetail({
       {/* Entwicklung dieses Tages */}
       {evo.pts.length > 2 && (
         <div className="mt-5">
-          <div className="mb-1 text-xs uppercase tracking-wider text-muted">
-            Entwicklung des Tages-Winds über die letzten Datenstände
-          </div>
+          <div className="label mb-1">Entwicklung des Tages-Winds über die letzten Datenstände</div>
           <p className="mb-2 text-[11px] text-faint">
             Wie sich der vorhergesagte Wind (Ø der 3 stärksten Stunden) für diesen Tag mit jedem
             neuen Lauf (3–6-h-Raster) verändert hat.
@@ -311,7 +316,7 @@ export default function DayDetail({
                 tickLine={{ stroke: PALETTE.axisLine }}
                 width={34}
               />
-              <ReferenceLine x={0} stroke="#22d3ee" strokeOpacity={0.5} />
+              <ReferenceLine x={0} className="ref-now" stroke={PALETTE.axisLine} />
               <Line
                 type="monotone"
                 dataKey="peak"
@@ -334,7 +339,7 @@ export default function DayDetail({
 function Stat({ label, children, big }: { label: string; children: React.ReactNode; big?: boolean }) {
   return (
     <div>
-      <div className="text-xs uppercase tracking-wider text-muted">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
       <div className={big ? "font-display text-2xl text-ink" : "text-base text-ink"}>{children}</div>
     </div>
   );

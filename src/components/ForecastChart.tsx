@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import type { SpotPayload, StationView } from "@/lib/types";
 import { convertWind, unitLabel, compass, type WindUnit } from "@/lib/units";
-import { PALETTE, ktColor } from "@/lib/palette";
+import { PALETTE, ktColor, stationColor as stColor } from "@/lib/palette";
 import { nowcastOffsetAt, nowcastCutoff, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
 import { fmtTime, windBands } from "./ui";
 
@@ -27,9 +27,9 @@ const HORIZONS = [
   { h: 384, label: "16 T" },
 ];
 
-// Farben der gemessenen Linien (je Station) — deutlich abgesetzt von der teal Prognose.
-const STATION_COLORS = ["#f472b6", "#fbbf24", "#34d399"];
-const stColor = (i: number) => STATION_COLORS[i % STATION_COLORS.length];
+// Glättung der Messung: Mittel über ±SMOOTH_S. Die Windguru-Stationen liefern 10-min-Werte;
+// ungeglättet zappelt die Linie so stark, dass man den Verlauf gegen die Prognose kaum sieht.
+const SMOOTH_S = 20 * 60;
 
 type Row = Record<string, number | (number | null)[] | boolean | null>;
 
@@ -90,14 +90,27 @@ export default function ForecastChart({
       .filter((p) => p.t <= end)
       .map((p) => ({ t: p.t, past: conv(p.wind) }));
 
-    // Gemessen: je Station eine Reihe von Punkten (meist in der Vergangenheit).
+    // Gemessen: je Station geglättet (Hauptlinie) und roh (blass dahinter).
     const mRows: Row[] = [];
     stations.forEach((st, i) => {
+      const smooth = (k: "windAvg" | "windMax", t: number) => {
+        let sum = 0;
+        let n = 0;
+        for (const o of st.series) {
+          const v = o[k];
+          if (v != null && Math.abs(o.t - t) <= SMOOTH_S) {
+            sum += v;
+            n++;
+          }
+        }
+        return n ? sum / n : null;
+      };
       for (const o of st.series) {
         mRows.push({
           t: o.t,
-          [`m${i}w`]: conv(o.windAvg),
-          [`m${i}g`]: conv(o.windMax),
+          [`m${i}w`]: conv(smooth("windAvg", o.t)),
+          [`m${i}r`]: conv(o.windAvg),
+          [`m${i}g`]: conv(smooth("windMax", o.t)),
           [`m${i}d`]: o.windDir,
         });
       }
@@ -120,12 +133,24 @@ export default function ForecastChart({
     return { data, midnights };
   }, [spot, stations, horizon, unit]);
 
-  // Wahrscheinlichkeit P(≥ Mindestwind) je Stunde als Balkenstreifen unter dem Chart.
+  // Streifen unter dem Diagramm: P(≥ Mindestwind) je Stunde als Deckkraft (grün = Fahrfenster)
+  // und darüber die Windrichtung als Pfeilzeile — statt kleiner Pfeile auf der Windlinie.
   const probData = useMemo(() => {
     const end = Date.now() / 1000 + horizon * 3600;
+    // Pfeil-Abstand je Zeitraum, damit sie sich auch auf dem Handy nicht überlappen.
+    const every = horizon <= 72 ? 6 : horizon <= 120 ? 12 : 24;
     return hours
       .filter((h) => h.t <= end)
-      .map((h) => ({ t: h.t, p: h.pMin == null ? null : Math.round(h.pMin * 100), ride: h.rideable, day: h.daylight }));
+      .map((h) => ({
+        t: h.t,
+        p: h.pMin == null ? null : Math.round(h.pMin * 100),
+        one: 1,
+        ride: h.rideable,
+        day: h.daylight,
+        arrowY: Math.floor(h.t / 3600) % every === 0 && h.dir != null ? 1.55 : null,
+        dir: h.dir,
+        windKt: h.wind,
+      }));
   }, [hours, horizon]);
 
   const windows = useMemo(() => days.flatMap((d) => d.windows), [days]);
@@ -202,6 +227,7 @@ export default function ForecastChart({
             stroke={PALETTE.green}
             strokeOpacity={0.45}
             strokeDasharray="6 4"
+            label={{ value: `ab ${convertWind(th.min, unit)}`, position: "insideBottomRight", fill: PALETTE.green, fontSize: 10 }}
           />
 
           {/* Tagestrenner */}
@@ -216,7 +242,7 @@ export default function ForecastChart({
             />
           ))}
           {nowSec >= firstT && nowSec <= lastT && (
-            <ReferenceLine x={nowSec} stroke="#22d3ee" strokeWidth={1} strokeOpacity={0.6} />
+            <ReferenceLine x={nowSec} className="ref-now" stroke={PALETTE.axisLine} strokeWidth={1} />
           )}
 
           <Line
@@ -238,7 +264,7 @@ export default function ForecastChart({
             isAnimationActive={false}
             connectNulls
             name="Wind"
-            dot={<DirDot />}
+            dot={false}
             activeDot={{ r: 4 }}
           />
 
@@ -284,12 +310,25 @@ export default function ForecastChart({
           ))}
           {shownStations.map(({ i }) => (
             <Line
+              key={`r${i}`}
+              type="linear"
+              dataKey={`m${i}r`}
+              stroke={stColor(i)}
+              strokeWidth={1}
+              strokeOpacity={0.3}
+              dot={false}
+              isAnimationActive={false}
+              connectNulls
+            />
+          ))}
+          {shownStations.map(({ i }) => (
+            <Line
               key={`w${i}`}
               type="monotone"
               dataKey={`m${i}w`}
               stroke={stColor(i)}
               strokeWidth={2.4}
-              dot={{ r: 1.6, fill: stColor(i), strokeWidth: 0 }}
+              dot={false}
               isAnimationActive={false}
               connectNulls
             />
@@ -298,30 +337,28 @@ export default function ForecastChart({
         </ComposedChart>
       </ResponsiveContainer>
 
-      {/* P(≥ Mindestwind) je Stunde */}
-      <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
-        <span>
-          Wahrscheinlichkeit für ≥ {convertWind(th.min, unit)} {unitLabel(unit)} (kalibriert)
-        </span>
-        <span className="text-faint">grün = fahrbares Fenster</span>
-      </div>
-      <ResponsiveContainer width="100%" height={56}>
-        <ComposedChart data={probData} margin={{ top: 8, right: 6, bottom: 0, left: -18 }}>
+      {/* Richtung + P(≥ Mindestwind) je Stunde als Streifen, auf derselben Zeitachse */}
+      <ResponsiveContainer width="100%" height={40}>
+        <ComposedChart data={probData} margin={{ top: 0, right: 6, bottom: 0, left: -18 }} barCategoryGap={0}>
           <XAxis dataKey="t" type="number" scale="time" domain={[firstT, lastT]} hide allowDataOverflow />
-          <YAxis domain={[0, 100]} ticks={[0, 50]} tick={{ fontSize: 10, fill: PALETTE.muted }} width={40} stroke={PALETTE.axisLine} />
-          <ReferenceLine y={50} className="ref-chrome" stroke={PALETTE.axisLine} strokeDasharray="2 3" />
-          <Bar dataKey="p" isAnimationActive={false}>
+          <YAxis domain={[0, 2]} hide width={40} />
+          <Bar dataKey="one" isAnimationActive={false} maxBarSize={12}>
             {probData.map((d) => (
               <Cell
                 key={d.t}
                 fill={d.ride ? PALETTE.green : PALETTE.muted}
-                fillOpacity={d.ride ? 0.85 : d.day ? 0.45 : 0.18}
+                fillOpacity={d.p == null ? 0 : d.ride ? 0.35 + 0.6 * (d.p / 100) : (d.day ? 0.08 : 0.03) + 0.6 * (d.p / 100)}
               />
             ))}
           </Bar>
+          <Line dataKey="arrowY" stroke="none" dot={<DirDot />} activeDot={false} isAnimationActive={false} />
           <Tooltip content={<ProbTooltip />} cursor={{ fill: "var(--tint-neutral)" }} />
         </ComposedChart>
       </ResponsiveContainer>
+      <div className="mt-1 text-[11px] text-faint">
+        Pfeile: Windrichtung · Streifen: Wahrscheinlichkeit für ≥ {convertWind(th.min, unit)} {unitLabel(unit)} (je
+        dunkler, desto sicherer; grün = Fahrfenster)
+      </div>
 
       <Legend stations={stations} hasNowcast={!!spot.nowcast} past={spot.pastForecast} unit={unit} />
     </div>
@@ -344,20 +381,20 @@ function ProbTooltip({ active, payload }: { active?: boolean; payload?: Array<{ 
   );
 }
 
-// Richtungspfeil als Punkt auf der Wind-Linie (alle 6 h).
+// Richtungspfeil in der Pfeilzeile unter dem Diagramm (Farbe = Windstärke).
 function DirDot(props: {
   cx?: number;
   cy?: number;
-  payload?: { dir: number | null; windKt: number | null; arrow?: boolean };
+  payload?: { dir: number | null; windKt: number | null; arrowY?: number | null };
 }) {
   const { cx, cy, payload } = props;
-  if (cx == null || cy == null || payload?.dir == null || !payload?.arrow) {
+  if (cx == null || cy == null || payload?.dir == null || payload?.arrowY == null) {
     return <g />;
   }
   const color = ktColor(payload.windKt ?? null);
   return (
-    <g transform={`translate(${cx}, ${cy - 16}) rotate(${payload.dir + 180})`}>
-      <path d="M0 -4 L3 5 L0 3 L-3 5 Z" style={{ fill: color }} />
+    <g transform={`translate(${cx}, ${cy}) rotate(${payload.dir + 180})`}>
+      <path d="M0 -6 L4.5 6 L0 3.5 L-4.5 6 Z" style={{ fill: color }} />
     </g>
   );
 }
@@ -439,7 +476,7 @@ function Legend({
   unit: WindUnit;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-muted">
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
       <span className="flex items-center gap-1.5">
         <span className="inline-block h-0.5 w-5 rounded" style={{ background: PALETTE.teal }} /> Wind
       </span>
@@ -474,13 +511,6 @@ function Legend({
       <span className="flex items-center gap-1.5">
         <span className="inline-block h-2 w-4 rounded-sm" style={{ background: PALETTE.green, opacity: 0.3 }} />
         Fahrfenster
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="inline-block h-0.5 w-5 border-t border-dashed" style={{ borderColor: PALETTE.green }} /> dein Mindestwind
-      </span>
-      <span>↑ Pfeile = Windrichtung (alle 6 h)</span>
-      <span title="Hintergrund-Bänder: knapp (blau), fahrbar (türkis), gut (grün), kräftig (gelb), zu viel (orange/rot)">
-        Hintergrund = Windbereiche wie die Kacheln
       </span>
     </div>
   );

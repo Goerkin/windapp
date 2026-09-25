@@ -12,22 +12,12 @@ import {
 } from "recharts";
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
-import { PALETTE, MODEL_COLORS } from "@/lib/palette";
+import { PALETTE, MODEL_COLORS, CAT_LABEL, catColor } from "@/lib/palette";
 import { fmtTime, dayKeyOf, hourOf, windBands } from "./ui";
 import HourBreakdown from "./HourBreakdown";
 
 const TZ = "Europe/Amsterdam";
 
-const CAT_LABEL: Record<string, string> = {
-  mesoscale: "hochauflösend",
-  "regional-hi": "regional",
-  global: "global",
-};
-const CAT_COLOR: Record<string, string> = {
-  mesoscale: "#22d3ee",
-  "regional-hi": "#a78bfa",
-  global: "#f59e0b",
-};
 
 /**
  * Welche Modellwerte die Linien zeigen. Standard ist „korrigiert": nur so liegt der
@@ -248,7 +238,7 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
                 }}
               />
             ))}
-          <ReferenceLine x={nowSec} stroke="#22d3ee" strokeOpacity={0.6} />
+          <ReferenceLine x={nowSec} className="ref-now" stroke={PALETTE.axisLine} />
           {hourIdx != null && spot.gridTimes[hourIdx] != null && (
             <ReferenceLine x={spot.gridTimes[hourIdx]} className="ref-chrome" stroke={PALETTE.axis} strokeOpacity={0.7} strokeDasharray="2 2" />
           )}
@@ -386,7 +376,7 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
                   <span className="font-600 text-ink">{m.label}</span>
                   <span
                     className="chip"
-                    style={{ color: CAT_COLOR[m.category], borderColor: CAT_COLOR[m.category] + "40" }}
+                    style={{ color: catColor(m.category), borderColor: catColor(m.category, 0.25) }}
                   >
                     {CAT_LABEL[m.category] ?? m.category}
                   </span>
@@ -409,7 +399,7 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
               <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[color:var(--color-bg-2)]">
                 <div
                   className="h-full rounded-full"
-                  style={{ width: `${Math.min(100, share * 100 * 3)}%`, background: CAT_COLOR[m.category] }}
+                  style={{ width: `${Math.min(100, share * 100 * 3)}%`, background: catColor(m.category) }}
                 />
               </div>
               <p className="mt-1.5 text-xs text-muted">

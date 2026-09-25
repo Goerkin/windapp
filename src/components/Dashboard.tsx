@@ -1,11 +1,12 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
 import { TH as th, evaluateHours, summarizeDays } from "@/lib/kite";
 import SpotPanel from "./SpotPanel";
 import SpotOverview from "./SpotOverview";
+import Verdict from "./Verdict";
 import { relTime } from "./ui";
 
 // Ab diesem Alter gilt der Datenstand als hängend und wird angemahnt. Der 24/7-Job zieht
@@ -21,12 +22,8 @@ export default function Dashboard({
 }) {
   const [spots, setSpots] = useState<SpotPayload[]>(initialSpots);
   const [unit, setUnit] = useState<WindUnit>("kn");
-  const [activeId, setActiveId] = useState<number | null>(initialSpots[0]?.id ?? null);
-  // Tages-Sprung aus der Übersicht; `nonce` erzwingt das Öffnen auch beim selben Tag.
-  const [jump, setJump] = useState<{ day: string | null; nonce: number }>({ day: null, nonce: 0 });
   const [error, setError] = useState<string | null>(initialError);
   const [busy, setBusy] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   const evals = useMemo(
     () =>
@@ -64,7 +61,8 @@ export default function Dashboard({
     }
   }, [loadView]);
 
-  const ageMin = lastFetch ? (Date.now() - new Date(lastFetch).getTime()) / 60000 : null;
+  const nowMs = Date.now();
+  const ageMin = lastFetch ? (nowMs - new Date(lastFetch).getTime()) / 60000 : null;
   const stale = ageMin != null && ageMin > STALE_MIN;
 
   // Ansicht alle 10 Minuten still neu laden (die Windguru-Abrufe macht der Job).
@@ -84,62 +82,105 @@ export default function Dashboard({
   }, [loadView]);
 
   const anyData = spots.some((s) => !s.empty);
-  const activeSpot = spots.find((s) => s.id === activeId) ?? spots[0] ?? null;
 
-  const openSpot = (id: number, day: string | null = null) => {
-    setActiveId(id);
-    setJump((j) => ({ day, nonce: j.nonce + 1 }));
-    requestAnimationFrame(() => panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  // Detail eines Spots als eigene Ansicht (statt unter der Übersicht gestapelt — dort stand fast
+  // alles doppelt). Über den Browser-Verlauf, damit Zurück-Geste/-Taste zur Übersicht führt,
+  // und mit #slug in der Adresse; ohne Neuladen (die Homescreen-App wird nur geweckt).
+  const [view, setView] = useState<{ id: number; day: string | null; nonce: number } | null>(null);
+  const openSpot = useCallback(
+    (id: number, day: string | null = null) => {
+      const slug = spots.find((x) => x.id === id)?.slug ?? String(id);
+      const replace = view != null; // Spotwechsel im Detail: kein zusätzlicher Verlaufseintrag
+      history[replace ? "replaceState" : "pushState"]({ wc: id, day }, "", `#${slug}`);
+      setView((v) => ({ id, day, nonce: (v?.nonce ?? 0) + 1 }));
+      window.scrollTo({ top: 0 });
+    },
+    [spots, view],
+  );
+  const backToOverview = () => {
+    if (history.state?.wc != null) history.back();
+    else setView(null);
   };
+  useEffect(() => {
+    const onPop = (e: PopStateEvent) => {
+      const st = e.state as { wc?: number; day?: string | null } | null;
+      setView(st?.wc != null ? { id: st.wc, day: st.day ?? null, nonce: Date.now() } : null);
+    };
+    window.addEventListener("popstate", onPop);
+    // Direkt mit #slug geöffnet (Lesezeichen, geteilter Link)?
+    const slug = decodeURIComponent(location.hash.slice(1));
+    const hit = slug && spots.find((x) => x.slug === slug);
+    // Erst nach dem ersten Bild umschalten: der Server kennt die Adresse ohne #slug nicht und
+    // rendert die Übersicht; beim Hydrieren muss dasselbe herauskommen.
+    const raf = hit
+      ? requestAnimationFrame(() => {
+          history.replaceState({ wc: hit.id, day: null }, "", location.hash);
+          setView({ id: hit.id, day: null, nonce: 1 });
+        })
+      : 0;
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      cancelAnimationFrame(raf);
+    };
+    // Nur beim Start — spätere Datenstände ändern die Slugs nicht.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const detail = view ? spots.find((x) => x.id === view.id) ?? null : null;
+
+  const nav = (
+    <>
+      <div className="seg" role="group" aria-label="Einheit">
+        {(["kn", "ms"] as WindUnit[]).map((u) => (
+          <button key={u} data-active={unit === u} onClick={() => setUnit(u)}>
+            {u === "kn" ? "kn" : "m/s"}
+          </button>
+        ))}
+      </div>
+      <Link href="/analyse" className="chip hover:border-accent" title="Modellvergleich und Güte-Rückschau">
+        Analyse
+      </Link>
+      <Link href="/hilfe" className="chip hover:border-accent" title="Was sehe ich hier und wie entstehen die Zahlen?">
+        Hilfe
+      </Link>
+    </>
+  );
+  const refreshBtn = lastFetch && (
+    <button
+      onClick={refresh}
+      disabled={busy}
+      className="chip shrink-0 hover:border-accent"
+      style={{ cursor: busy ? "wait" : "pointer", color: stale ? "var(--wg-amber)" : undefined }}
+      title={
+        stale
+          ? `Der Datenstand ist ${Math.round(ageMin!)} min alt — der Erfassungs-Job läuft alle 30 min. Klick lädt die Ansicht neu.`
+          : "Ansicht neu laden"
+      }
+    >
+      <span className={busy ? "animate-spin" : ""}>↻</span> {busy ? "lädt…" : relTime(lastFetch)}
+    </button>
+  );
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-4 sm:px-6 sm:py-6 lg:px-8">
-      <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
-        <div className="flex items-center gap-2.5">
+      <header className="mb-3 flex items-center justify-between gap-3 sm:mb-5">
+        <button type="button" onClick={detail ? backToOverview : undefined} className="flex min-w-0 items-center gap-2.5 text-left">
           <WindLogo />
-          <div>
-            <h1 className="font-display text-2xl font-700 leading-none text-ink sm:text-3xl">Wind Cockpit</h1>
+          <div className="min-w-0">
+            <h1 className="font-display text-xl font-700 leading-none text-ink sm:text-3xl">Wind Cockpit</h1>
             <p
-              className="mt-1 text-[11px] text-faint"
+              className="mt-1 hidden text-[11px] text-faint sm:block"
               title="Referenz Twintip, 80 kg: fahrbar ab / gut ab / kräftig ab / zu viel ab"
             >
               fahrbar ab {th.min} · gut {th.good} · kräftig {th.strong} · zu viel {th.over} kn
             </p>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="seg" role="group" aria-label="Einheit">
-            {(["kn", "ms"] as WindUnit[]).map((u) => (
-              <button key={u} data-active={unit === u} onClick={() => setUnit(u)}>
-                {u === "kn" ? "kn" : "m/s"}
-              </button>
-            ))}
-          </div>
-          <Link href="/analyse" className="chip hover:border-accent" title="Modellvergleich und Güte-Rückschau">
-            Analyse
-          </Link>
-          <Link href="/hilfe" className="chip hover:border-accent" title="Was sehe ich hier und wie entstehen die Zahlen?">
-            ? Hilfe
-          </Link>
-          {lastFetch && (
-            <button
-              onClick={refresh}
-              disabled={busy}
-              className="chip hover:border-accent"
-              style={{ cursor: busy ? "wait" : "pointer", color: stale ? "var(--wg-amber)" : undefined }}
-              title={
-                stale
-                  ? `Der Datenstand ist ${Math.round(ageMin!)} min alt — der Erfassungs-Job läuft alle 30 min. Klick lädt die Ansicht neu.`
-                  : "Ansicht neu laden"
-              }
-            >
-              <span className={busy ? "animate-spin" : ""}>↻</span>{" "}
-              {busy ? "lädt…" : <>Stand {relTime(lastFetch)}</>}
-            </button>
-          )}
+        </button>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="hidden items-center gap-3 sm:flex">{nav}</div>
+          {refreshBtn}
         </div>
       </header>
+      <nav className="mb-4 flex items-center gap-2 sm:hidden">{nav}</nav>
 
       {error && (
         <div className="panel-flat mb-4 border-l-2 p-4 text-sm" style={{ borderLeftColor: "var(--wg-red)" }}>
@@ -157,41 +198,51 @@ export default function Dashboard({
         </div>
       )}
 
-      {/* Übersicht: beide Spots + die nächsten guten Fenster — die Antwort auf „wann & wo?" */}
-      {anyData && (
-        <SpotOverview
-          spots={spots}
-          evals={evals}
-          th={th}
-          unit={unit}
-          activeId={activeSpot?.id ?? null}
-          onOpen={openSpot}
-        />
-      )}
-
-      <div ref={panelRef} className="scroll-mt-4">
-        {activeSpot && (
+      {detail ? (
+        <>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={backToOverview} className="chip hover:border-accent">
+              ← Übersicht
+            </button>
+            {spots.length > 1 && (
+              <div className="seg" role="group" aria-label="Spot">
+                {spots.map((x) => (
+                  <button key={x.id} data-active={x.id === detail.id} onClick={() => openSpot(x.id)}>
+                    {x.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <SpotPanel
-            key={`${activeSpot.id}-${jump.nonce}`}
-            spot={activeSpot}
+            key={`${detail.id}-${view!.nonce}`}
+            spot={detail}
             unit={unit}
             th={th}
-            hours={evals.get(activeSpot.id)?.hours ?? []}
-            days={evals.get(activeSpot.id)?.days ?? []}
-            initialDay={jump.day}
+            hours={evals.get(detail.id)?.hours ?? []}
+            days={evals.get(detail.id)?.days ?? []}
+            initialDay={view!.day}
           />
-        )}
-      </div>
+        </>
+      ) : (
+        anyData && (
+          <>
+            {/* Die Antwort zuerst — dann je Spot Details und das Kachel-Raster. */}
+            <Verdict spots={spots} evals={evals} unit={unit} nowSec={nowMs / 1000} onOpen={openSpot} />
+            <SpotOverview spots={spots} evals={evals} th={th} unit={unit} onOpen={openSpot} />
+          </>
+        )
+      )}
 
       <footer className="mt-8 border-t border-border-soft pt-4 text-xs text-faint">
         <p>
           Eigener Modell-Mix aus frei abrufbaren Windguru-Modelldaten, statistisch nachkorrigiert
           und gegen die Messstation geprüft. Privates Dashboard, nicht mit Windguru affiliiert.{" "}
-          <Link href="/hilfe" className="underline hover:text-accent">
+          <Link href="/hilfe" className="underline hover:text-ink">
             Wie die Zahlen entstehen
           </Link>{" "}
           ·{" "}
-          <Link href="/analyse" className="underline hover:text-accent">
+          <Link href="/analyse" className="underline hover:text-ink">
             Modelle &amp; Genauigkeit
           </Link>
         </p>
@@ -202,10 +253,10 @@ export default function Dashboard({
 
 function WindLogo() {
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-      <path d="M3 8h11a3 3 0 1 0-3-3" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" />
-      <path d="M3 13h15a3 3 0 1 1-3 3" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" opacity="0.7" />
-      <path d="M3 18h8" stroke="#22d3ee" strokeWidth="2" strokeLinecap="round" opacity="0.45" />
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" className="shrink-0" aria-hidden>
+      <path d="M3 8h11a3 3 0 1 0-3-3" style={{ stroke: "var(--wg-teal)" }} strokeWidth="2" strokeLinecap="round" />
+      <path d="M3 13h15a3 3 0 1 1-3 3" style={{ stroke: "var(--wg-teal)" }} strokeWidth="2" strokeLinecap="round" opacity="0.7" />
+      <path d="M3 18h8" style={{ stroke: "var(--wg-teal)" }} strokeWidth="2" strokeLinecap="round" opacity="0.45" />
     </svg>
   );
 }

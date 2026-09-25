@@ -16,7 +16,7 @@ import { TH, toneOf } from "./kite";
 
 export const PALETTE = {
   grey: "#64748b",
-  blue: "#3b82f6",
+  blue: "#7c93b8", // „knapp" — entsättigt, siehe --wg-blue in globals.css
   teal: "#22d3ee",
   green: "#22c55e",
   amber: "#f59e0b",
@@ -51,3 +51,21 @@ export const MODEL_COLORS = [
   "#ca8a04", "#16a34a", "#9333ea", "#0d9488", "#e11d48", "#3b82f6",
   "#a16207", "#14b8a6", "#c026d3", "#4d7c0f",
 ];
+
+// Gemessene Stationen (Serienfarben, gehen als SVG-Attribut an Recharts) — deutlich abgesetzt
+// von der türkisen Prognose. Einzige Stelle; Diagramm und Kopf-Kacheln lesen beide hier.
+export const STATION_COLORS = ["#f472b6", "#fbbf24", "#34d399"];
+export const stationColor = (i: number) => STATION_COLORS[i % STATION_COLORS.length];
+
+// Modell-Kategorien (Analyse) als CSS-Variablen — kippen mit dem Thema.
+export const CAT_LABEL: Record<string, string> = {
+  mesoscale: "hochauflösend",
+  "regional-hi": "regional",
+  global: "global",
+};
+const CAT_VAR: Record<string, string> = { mesoscale: "--cat-meso", "regional-hi": "--cat-regional", global: "--cat-global" };
+/** Kategorie-Farbe; mit `alpha` (0..1) als durchscheinende Variante (für Rahmen). */
+export function catColor(cat: string, alpha?: number): string {
+  const v = `var(${CAT_VAR[cat] ?? "--color-muted"})`;
+  return alpha == null ? v : `color-mix(in srgb, ${v} ${Math.round(alpha * 100)}%, transparent)`;
+}

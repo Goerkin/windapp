@@ -268,9 +268,12 @@ function weightedMedian(xs: { v: number; w: number }[]): number | null {
   const s = [...xs].sort((a, b) => a.v - b.v);
   const total = s.reduce((a, x) => a + x.w, 0);
   let acc = 0;
-  for (const x of s) {
-    acc += x.w;
-    if (acc >= total / 2) return x.v;
+  for (let i = 0; i < s.length; i++) {
+    acc += s[i].w;
+    // Genau die Hälfte erreicht (z. B. zwei gleich gewichtete Modelle): Mitte zum nächsten
+    // Wert — sonst wäre die „Modell-Spitze" zufällig das schwächere der beiden.
+    if (Math.abs(acc - total / 2) < 1e-9 * total && i + 1 < s.length) return (s[i].v + s[i + 1].v) / 2;
+    if (acc >= total / 2) return s[i].v;
   }
   return s[s.length - 1].v;
 }

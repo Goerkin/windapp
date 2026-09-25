@@ -3,17 +3,14 @@ import { useState } from "react";
 import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
 import { unitLabel } from "@/lib/units";
-import { ktColor } from "@/lib/palette";
+import { ktColor, stationColor } from "@/lib/palette";
 import { ratingLabel, dirQuality, dirHint, DIR_LABEL, type DaySummary, type HourEval, type Thresholds } from "@/lib/kite";
-import { WindArrow, Compass, WaterTemps, fmtWind, relTime } from "./ui";
+import { WindArrow, Compass, WaterTemps, SunIcon, fmtWind, relTime } from "./ui";
 import DailyStrip from "./DailyStrip";
 import ForecastChart from "./ForecastChart";
 import TrendPanel from "./TrendPanel";
 import Link from "next/link";
 import DayDetail from "./DayDetail";
-
-// Farben der gemessenen Stationen (identisch zu ForecastChart).
-const STATION_COLORS = ["#f472b6", "#fbbf24", "#34d399"];
 
 type Tab = "overview" | "day";
 
@@ -61,7 +58,7 @@ export default function SpotPanel({
               <div>Stand {relTime(spot.fetchedAt)}</div>
               {spot.sunrise && spot.sunset && (
                 <div className="mt-0.5">
-                  ☀ {spot.sunrise}–{spot.sunset} · <WaterTemps water={spot.water} fallback={spot.waterTemp} />
+                  <SunIcon /> {spot.sunrise}–{spot.sunset} · <WaterTemps water={spot.water} fallback={spot.waterTemp} />
                 </div>
               )}
             </>
@@ -78,7 +75,7 @@ export default function SpotPanel({
           {/* Aktuell */}
           <div className="flex flex-wrap items-end gap-x-8 gap-y-4 p-4 sm:p-5">
             <div>
-              <div className="text-xs uppercase tracking-wider text-muted">Prognose jetzt</div>
+              <div className="label">Prognose jetzt</div>
               <div className="flex items-baseline gap-2">
                 <span className="font-display text-5xl font-700 leading-none sm:text-6xl" style={{ color: toneColor }}>
                   {fmtWind(now.windspd, unit)}
@@ -87,7 +84,7 @@ export default function SpotPanel({
               </div>
               <div className="mt-1 text-sm text-body">
                 Böen <span className="font-mono text-ink">{fmtWind(now.gust, unit)}</span> {unitLabel(unit)}
-                <span className="ml-2 chip" style={{ color: toneColor, borderColor: toneColor + "55" }}>
+                <span className="ml-2 chip" style={{ color: toneColor, borderColor: `color-mix(in srgb, ${toneColor} 35%, transparent)` }}>
                   {ratingLabel(now.windspd, th)}
                 </span>
               </div>
@@ -115,11 +112,11 @@ export default function SpotPanel({
                 <div
                   key={st.id}
                   className="rounded-xl border border-border px-4 py-2"
-                  style={{ borderColor: STATION_COLORS[i % STATION_COLORS.length] + "55" }}
+                  style={{ borderColor: stationColor(i) + "55" }}
                   title={st.obsTime ? `gemessen ${relTime(st.obsTime)} · Station ${st.name}` : undefined}
                 >
-                  <div className="text-xs uppercase tracking-wider" style={{ color: STATION_COLORS[i % STATION_COLORS.length] }}>
-                    Gemessen · {st.name}
+                  <div className="text-xs font-600" style={{ color: stationColor(i) }}>
+                    gemessen · {st.name}
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="font-display text-3xl font-700 leading-none text-ink">{fmtWind(st.windAvg, unit)}</span>
@@ -134,7 +131,7 @@ export default function SpotPanel({
             )}
 
             <div className="flex gap-6">
-              <Metric label="Temp" value={now.tmp != null ? `${Math.round(now.tmp)}°` : "–"} />
+              <Metric label="Luft" value={now.tmp != null ? `${Math.round(now.tmp)}°` : "–"} />
               <Metric label="gefühlt" value={now.tmpe != null ? `${Math.round(now.tmpe)}°` : "–"} />
               <Metric label="Wolken" value={now.cloud != null ? `${now.cloud}%` : "–"} />
               <Metric label="Modelle" value={String(now.n)} title="Anzahl Modelle im Konsens für diesen Zeitpunkt" />
@@ -193,31 +190,34 @@ export default function SpotPanel({
   );
 }
 
-/** Messung vs. Prognose jetzt — und was das für die nächsten Stunden heißt. */
+/**
+ * Messung vs. Prognose jetzt — und was das für die nächsten Stunden heißt. Bewusst neutral
+ * gestaltet: das ist eine Information, keine Warnung (Rot bleibt „gefährlich/zu viel").
+ */
 function NowcastNote({ nc, unit }: { nc: NonNullable<SpotPayload["nowcast"]>; unit: WindUnit }) {
   const off = nc.offset;
   const u = unitLabel(unit);
-  const abs = fmtWind(Math.abs(off), unit);
   const big = Math.abs(off) >= 2;
-  const color = !big ? "#8a93a8" : off > 0 ? "#34d399" : "#fb7185";
   return (
-    <div className="mx-4 mb-3 rounded-xl border px-3 py-2 text-sm sm:mx-5" style={{ borderColor: color + "55", background: color + "10" }}>
-      <span className="text-muted">{nc.station} </span>
-      <span className="font-mono text-ink">{fmtWind(nc.measured, unit)}</span>
-      <span className="text-muted"> {u} / Prognose </span>
-      <span className="font-mono text-ink">{fmtWind(nc.forecast, unit)}</span>
-      <span className="text-muted"> {u} → </span>
+    <div className="mx-4 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-[color:var(--tint-neutral)] px-3 py-2 text-sm sm:mx-5">
+      <span className="text-muted">
+        {nc.station} misst <span className="font-600 tabular-nums text-ink">{fmtWind(nc.measured, unit)}</span> {u}, Prognose{" "}
+        <span className="font-600 tabular-nums text-ink">{fmtWind(nc.forecast, unit)}</span> {u}
+      </span>
       {big ? (
-        <span style={{ color }}>
-          Modelle {off > 0 ? "unterschätzen" : "überschätzen"} gerade um {abs} {u}. Die nächsten Stunden sind
-          entsprechend korrigiert
-          {nc.halfLifeH != null ? ` (nach ~${nc.halfLifeH} h gilt noch die Hälfte — aus den Daten gelernt)` : ""}; bei
-          einem Winddreh über 60° endet die Korrektur.
-        </span>
+        <>
+          <span className="chip tabular-nums text-ink" title="So viel wird auf die nächsten Stunden aufgeschlagen bzw. abgezogen">
+            Korrektur {off > 0 ? "+" : "−"}
+            {fmtWind(Math.abs(off), unit)} {u}
+          </span>
+          <span className="basis-full text-[12px] text-faint">
+            Die nächsten Stunden sind angepasst
+            {nc.halfLifeH != null ? `; nach ~${nc.halfLifeH} h gilt noch die Hälfte (aus den Daten gelernt)` : ""}. Bei
+            einem Winddreh über 60° endet die Korrektur.
+          </span>
+        </>
       ) : (
-        <span className="text-body">
-          Prognose passt (±{fmtWind(2, unit)} {u}).
-        </span>
+        <span className="chip text-muted">Prognose passt (±{fmtWind(2, unit)} {u})</span>
       )}
     </div>
   );
@@ -226,7 +226,7 @@ function NowcastNote({ nc, unit }: { nc: NonNullable<SpotPayload["nowcast"]>; un
 function Metric({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <div title={title}>
-      <div className="text-xs uppercase tracking-wider text-muted">{label}</div>
+      <div className="text-xs text-muted">{label}</div>
       <div className="font-display text-xl text-ink">{value}</div>
     </div>
   );

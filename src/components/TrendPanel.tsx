@@ -77,7 +77,7 @@ export default function TrendPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
               tickLine={{ stroke: PALETTE.axisLine }}
               width={40}
             />
-            <ReferenceLine x={nowSec} stroke="#22d3ee" strokeOpacity={0.6} />
+            <ReferenceLine x={nowSec} className="ref-now" stroke={PALETTE.axisLine} />
             {runs.map((r, ri) => {
               const s = runStyle(ri);
               return (
