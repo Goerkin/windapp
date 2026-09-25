@@ -43,6 +43,7 @@ nicht abbrechen, Status per `databricks apps get windguru -p <p>` prüfen.
 | `src/lib/consensus.ts` | Konsens je Stunde aus korrigierten, gewichteten Modellen |
 | `src/lib/data.ts` | Baut das Dashboard-Payload (`SpotPayload`) |
 | `src/lib/kite.ts` | Client-Logik: Schwellen (fix Twintip 80 kg), Richtung, Tageslicht, P(≥13 kn), Fahrfenster, Tages-Zusammenfassung |
+| `public/sw.js` + `src/app/manifest.ts` | PWA: installierbar auf dem Homescreen, zeigt ohne Netz den zuletzt geladenen Stand. Der Service Worker wird in `ServiceWorker.tsx` nur im Produktions-Build angemeldet. Neue Fassung greift erst, wenn `VERSION` in `sw.js` hochgezählt wird. Symbole in `public/` sind eingecheckt, erzeugt von `scripts/make-icons.mjs`. |
 | `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx` → `SpotOverview` (+ `ForecastGrid`) → `SpotPanel` (Tabs Verlauf/Tag). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel`/`AccuracyPanel`. |
 | `prisma/schema.prisma` | Tabellen: Spot, Snapshot, ModelSeries, StationObs, WaterTemp, ModelSkill, SpotStat |
 
@@ -113,6 +114,9 @@ node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach 
   eine Tailwind-Utility (`className="fill-ink"`) oder eine Regel in `globals.css` benutzen
   (CSS schlägt Präsentationsattribute, so ist das Recharts-Chrome gelöst).
 - Nach UI-Änderungen visuell prüfen: Desktop + ~390 px Handybreite, **und hell + dunkel**.
+- Die App wird überwiegend **installiert auf dem Handy** benutzt. Darum: kein Zustand, der ein
+  Neuladen der Seite braucht (eine Homescreen-App wird geweckt, nicht neu geladen), und nichts,
+  was ohne Netz eine Fehlerseite statt des letzten Standes zeigt.
 
 ## Stolpersteine (bereits gelöst — nicht wieder einbauen)
 

@@ -90,6 +90,29 @@ Umgebungsvariablen in Vercel (Production):
 > Das OAuth-Secret eines Service Principals läuft ab (hier: **23.09.2028**). Dann ein neues
 > Secret erzeugen und in Vercel eintragen, sonst zeigt die Seite nur noch Verbindungsfehler.
 
+## Aufs Handy holen
+
+Die Oberfläche ist eine **installierbare Web-App (PWA)**. Im Browser die Seite öffnen, dann:
+
+- **iPhone (Safari):** Teilen-Symbol → *Zum Home-Bildschirm*
+- **Android (Chrome):** Menü ⋮ → *App installieren*
+
+Danach startet sie wie eine native App im Vollbild, ohne Browserleiste, mit eigenem Symbol. Ein
+App-Store ist nicht beteiligt — ein Push auf `master` aktualisiert auch die installierte App.
+
+Zwei Dinge sind eigens dafür gebaut, weil eine Homescreen-App anders benutzt wird als ein Tab:
+
+- **Ohne Netz** zeigt sie den zuletzt geladenen Stand statt einer Fehlerseite
+  ([public/sw.js](public/sw.js)) — am Wasser ist der Empfang oft schlecht. Wie alt der Stand
+  ist, steht ohnehin im Kopf der Seite und wird ab 45 Minuten gelb.
+- **Beim Aufklappen** lädt sie sofort nach. Eine installierte App wird nicht neu geladen,
+  sondern aus dem Hintergrund geweckt; das 10-Minuten-Intervall stand solange still.
+
+Die Symbole liegen eingecheckt in `public/`. Nach einer Änderung am Logo erzeugt
+`node scripts/make-icons.mjs` sie neu (braucht `sharp`, nur lokal — der Build selbst rechnet
+keine Bilder). Eine neue Fassung des Service Workers wird erst übernommen, wenn `VERSION` in
+`public/sw.js` hochgezählt wird.
+
 ## Qualitätssicherung
 
 [CI](.github/workflows/ci.yml) (GitHub Actions) prüft jeden Push und Pull Request:

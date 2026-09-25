@@ -68,9 +68,19 @@ export default function Dashboard({
   const stale = ageMin != null && ageMin > STALE_MIN;
 
   // Ansicht alle 10 Minuten still neu laden (die Windguru-Abrufe macht der Job).
+  // Zusätzlich beim Zurückkommen in den Vordergrund: als Homescreen-App wird die Seite nicht
+  // neu geladen, sondern aufgeweckt — das Intervall stand währenddessen still, und ohne diesen
+  // Nachzug zeigt die App beim Aufklappen stundenalte Zahlen.
   useEffect(() => {
     const id = setInterval(() => void loadView().catch(() => {}), 10 * 60 * 1000);
-    return () => clearInterval(id);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadView().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [loadView]);
 
   const anyData = spots.some((s) => !s.empty);

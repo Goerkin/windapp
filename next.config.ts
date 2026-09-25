@@ -8,6 +8,19 @@ const nextConfig: NextConfig = {
   output: "standalone",
   images: { unoptimized: true },
 
+  // Der Service Worker darf nie aus einem HTTP-Cache kommen, sonst hängt ein Update fest.
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
+        ],
+      },
+    ];
+  },
+
   // Der Hintergrund-Poller läuft im Node-Server (instrumentation.ts). instrumentationHook
   // ist in Next 16 Standard; hier nur dokumentiert, dass wir darauf bauen.
   // Prisma (engineType "client") lädt query_compiler_bg.wasm zur Laufzeit über einen Pfad,
