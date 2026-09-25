@@ -8,14 +8,16 @@ kalibrierter Wahrscheinlichkeit.
 **Live: <https://windapp-five.vercel.app>**
 
 Erfassung **und** Lernen laufen als Databricks-Jobs, unabhängig von jeder Oberfläche. Die
-Next.js-App ist eine reine Leseansicht (gehostet auf Vercel, optional als Databricks App) und
-jederzeit entbehrlich — die Datenbasis lernt weiter.
+Next.js-App ist eine reine Leseansicht (gehostet auf Vercel) und jederzeit entbehrlich — die
+Datenbasis lernt weiter.
 
 - **Übersicht**: beide Spots, Wind jetzt (gemessen), gemessene Wassertemperatur, nächste
   Fahrfenster und ein Windguru-artiges Kachel-Raster bis zum übernächsten Wochenende
 - **Verlauf**: Konsens-Prognose, Böen, Messung, Prognose von vor 24 h, Kurzfrist-Korrektur,
   Fahrfenster, Wahrscheinlichkeit je Stunde
-- **Analyse** (`/analyse`): alle Einzelmodelle, Modell-Güte, ehrliche Rückschau, Kalibrierung
+- **Analyse** (`/analyse`): alle Einzelmodelle, die Aufschlüsselung jeder Konsens-Stunde
+  (Rohwert, Korrektur, Anteil je Modell — und welche Modelle warum fehlen), die gelernten
+  Korrekturen je Modell/Vorlauf/Windrichtung, Modell-Güte, ehrliche Rückschau, Kalibrierung
 - **Hilfe** (`/hilfe`): erklärt die Anzeige und den kompletten Rechenweg mit Formeln — der
   beste Einstieg, um zu verstehen, wie die Zahlen entstehen
 
@@ -39,14 +41,7 @@ Das Skript ist idempotent (bei Fehlern einfach erneut starten): Lakebase-Datenba
 Tabellen + Spots einspielen, Bundle deployen (Erfassungs-Job + Lern-Job), ersten Datenabruf
 und ersten Lernlauf starten.
 
-Die Oberfläche ist **nicht** Teil davon — sie läuft auf Vercel (siehe unten). Alternativ als
-Databricks App:
-
-```bash
-node scripts/setup.mjs --profile wind --with-app   # baut, deployt und startet die App
-```
-
-Der erste App-Start dauert ~10–15 min (die CLI zeigt lange „Preparing source code").
+Die Oberfläche ist **nicht** Teil davon — sie läuft auf Vercel (siehe unten).
 
 > **Free Edition**: nur **ein Lakebase-Projekt** je Account. Existiert schon eins, dessen ID
 > übergeben: `node scripts/setup.mjs --profile wind --project <id>`.
@@ -57,7 +52,6 @@ Was danach läuft:
 |---|---|---|
 | Erfassungs-Job (`windguru_ingest`) | alle 30 min, 24/7 | Modellprognosen, Messstationen, Wassertemperatur → Lakebase |
 | Lern-Job (`windguru_skill`) | stündlich (:10) | Modellgüte + Nachkorrektur neu rechnen, Datenbasis-Wächter |
-| App (nur mit `--with-app`) | täglich 6–23 Uhr | Anzeige. Rechnet und schreibt nichts. |
 
 Die Korrekturen werden mit jedem Tag besser; in den ersten Tagen gelten Standardwerte. Der
 Lern-Job schreibt am Ende jedes Laufs einen Gesundheitsbericht in die Job-Ausgabe (Alter des
@@ -108,27 +102,51 @@ Zwei Dinge sind eigens dafür gebaut, weil eine Homescreen-App anders benutzt wi
 - **Beim Aufklappen** lädt sie sofort nach. Eine installierte App wird nicht neu geladen,
   sondern aus dem Hintergrund geweckt; das 10-Minuten-Intervall stand solange still.
 
+**Updates kommen von allein.** Ein Push auf `master` erreicht auch die installierte App: HTML
+und Daten holt der Service Worker immer zuerst aus dem Netz, und die JavaScript-Dateien tragen
+den Inhalt im Namen — nach einem Deploy verweist die frische Seite auf neue Namen, die der
+Cache nicht hat. Es gibt nichts zu deinstallieren. Zwei Einschränkungen: offline bleibt es beim
+alten Stand, und eine bereits offene App aktualisiert ihre Oberfläche erst beim nächsten Öffnen
+(der 10-Minuten-Takt holt nur Daten, keinen Code).
+
+Auch ein geänderter `public/sw.js` installiert sich selbst — dafür ist kein Handgriff nötig.
+`VERSION` steuert nur, ob die **alten Caches verworfen** werden; das greift, wie jede
+SW-Änderung, erst beim übernächsten Öffnen (einmal Entdecken, einmal Übernehmen). Wer also die
+Caching-Regeln ändert, zählt `VERSION` hoch, damit kein Altbestand liegen bleibt.
+
 Die Symbole liegen eingecheckt in `public/`. Nach einer Änderung am Logo erzeugt
 `node scripts/make-icons.mjs` sie neu (braucht `sharp`, nur lokal — der Build selbst rechnet
-keine Bilder). Eine neue Fassung des Service Workers wird erst übernommen, wenn `VERSION` in
-`public/sw.js` hochgezählt wird.
+keine Bilder).
 
 ## Qualitätssicherung
 
 [CI](.github/workflows/ci.yml) (GitHub Actions) prüft jeden Push und Pull Request:
-Typprüfung, Lint, Tests und Syntax der Python-Jobs. Die Tests decken vor allem ab, dass Lernen
+Typprüfung, Lint, Tests und beide Python-Jobs. Die Tests decken vor allem ab, dass Lernen
 (Python) und Anwenden (TypeScript) dieselbe Mathematik rechnen — sie liegt bewusst doppelt vor,
 siehe [CLAUDE.md](CLAUDE.md). Lokal: `npm test` (braucht `python3` mit numpy).
+
+Ein zweiter CI-Job lässt **beide Jobs gegen ein echtes Postgres** laufen
+([tests/jobs/e2e_test.py](tests/jobs/e2e_test.py)): Erfassung ohne Netz (Abrufe ersetzt) und
+Lernen auf synthetischen Läufen mit bekanntem Fehler, den das Lernen wiederfinden muss. Lokal:
+`TEST_DATABASE_URL=postgresql://…/windguru npm run test:jobs` (legt nur das Schema `e2e_jobs`
+an und verwirft es bei jedem Lauf).
+
+> Vercel deployt einen Push auf `master` **parallel** zur CI — ein roter Lauf hält ihn nicht
+> auf. Wer das will: in Vercel unter *Settings → Git* das automatische Deployment von `master`
+> abschalten oder über Pull Requests arbeiten (dort blockiert die Branch-Regel das Mergen).
 
 ## Wie es funktioniert (kurz)
 
 1. **Daten**: Windguru hat keine offizielle API; die interne `iapi.php` liefert JSON, wenn ein
    `Referer` auf die Spot-Seite mitgeht — alles in [scripts/ingest_job.py](scripts/ingest_job.py).
-   Messstationen: Natural High (Windguru) und Mirns NKV (soarcast). Wassertemperatur:
-   Rijkswaterstaat (DDAPI20).
+   Jede Modell-Reihe wird **genau einmal** gespeichert (Schlüssel: Windgurus `rundef`); eine
+   schon bekannte Reihe wird gar nicht erst neu heruntergeladen. Messstationen: Natural High
+   (Windguru, 10-min-Verlauf der letzten Stunden bei jedem Lauf — Lücken füllen sich selbst) und
+   Mirns NKV (soarcast, nur der aktuelle Wert). Wassertemperatur: Rijkswaterstaat (DDAPI20).
 2. **Nachkorrektur** je Modell × Vorlauf-Stufe als Ridge-Regression gegen die Messung,
    **gelernt und ehrlich rollierend geprüft** in [scripts/skill_job.py](scripts/skill_job.py)
-   (nur Daten VOR dem jeweiligen Prognosezeitpunkt); die Daten wählen zwischen 6 Varianten.
+   (nur Daten VOR dem jeweiligen Prognosezeitpunkt); die Daten wählen zwischen 6 Varianten. Die
+   berichtete Güte ist die der jeweils **damals** gewählten Variante — keine Auswahl-Schönung.
    Angewendet wird das Ergebnis in [src/lib/calib.ts](src/lib/calib.ts).
 3. **Konsens** = mit 1/Restfehler² gewichtetes Mittel ([src/lib/consensus.ts](src/lib/consensus.ts)),
    plus Kurzfrist-Korrektur aus der aktuellen Messung.
@@ -151,7 +169,8 @@ und Seed lesen alle diese Datei. Danach `npm test` (prüft die Form) und
 |---|---|---|
 | `LAKEBASE_SCHEMA` | Postgres-Schema | `windguru` |
 | `SNAPSHOT_RETENTION_DAYS` | Aufbewahrung in Tagen, nur im Erfassungs-Job (`0` = unbegrenzt) | `0` |
-| `THIN_AFTER_DAYS` / `THIN_KEEP_H` | Verdichtung älterer Datenstände | `21` / `6` |
+| `THIN_AFTER_DAYS` / `THIN_KEEP_H` | Verdichtung älterer Abrufe (verwaiste Modell-Reihen fallen mit weg) | `21` / `6` |
+| `STATION_BACKFILL_H` | so viele Stunden Stationsverlauf holt jeder Erfassungslauf nach | `6` |
 | `SKILL_WINDOW_DAYS` | Lernfenster des Lern-Jobs | `90` |
 | `SKILL_HALFLIFE_DAYS` | Recency-Halbwertszeit | `14` |
 | `SKILL_MAX_SNAPS` | Verifikations-Stichtage (deckelt die Mindest-Stichproben) | `200` |

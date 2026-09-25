@@ -3,6 +3,7 @@ import type { SpotPayload } from "@/lib/types";
 import type { WindUnit } from "@/lib/units";
 import { PALETTE } from "@/lib/palette";
 import { relTime } from "./ui";
+import { LEARN } from "@/lib/calib";
 
 function unitOf(unit: WindUnit) {
   return unit === "ms" ? { f: (kn: number) => kn * 0.514444, label: "m/s", d: 2 } : { f: (kn: number) => kn, label: "kn", d: 2 };
@@ -38,9 +39,14 @@ export default function MethodPanel({ spot, unit }: { spot: SpotPayload; unit: W
         <p className="mt-1 text-[11px] text-faint">
           Ehrliche Rückschau: für {v.snapshots} frühere Prognosezeitpunkte wurde jede Variante nur mit den
           Messungen gelernt, die DAVOR vorlagen, und dann gegen die tatsächliche Messung geprüft. Gewählt
-          wird die einfachste Variante, die höchstens 0.05 kn schlechter ist als die beste
-          {n24 < 60 ? ` — noch zu wenig Vergleiche (${n24} von 60 bei 24 h), daher vorerst der Standard` : ""}.
-          Mit wenigen Wochen Historie sind Unterschiede unter ~0.2 kn noch Zufall.
+          wird die einfachste Variante, die höchstens {LEARN.selectTolKn} kn schlechter ist als die beste
+          {n24 < LEARN.selectMinN
+            ? ` — noch zu wenig Vergleiche (${n24} von ${LEARN.selectMinN} bei 24 h), daher vorerst der Standard`
+            : ""}
+          . Mit wenigen Wochen Historie sind Unterschiede unter ~0.2 kn noch Zufall. Die Tabelle ist
+          die Rückschau über alle Prüfzeitpunkte; die berichtete Güte unter „Wie gut trifft der
+          Konsens?" zeigt dagegen, was jeweils die damals gewählte Variante lieferte
+          {v.prequential && v.switches != null ? ` (Wechsel im Prüfzeitraum: ${v.switches})` : ""}.
         </p>
       </div>
 
@@ -142,8 +148,9 @@ export default function MethodPanel({ spot, unit }: { spot: SpotPayload; unit: W
             Brier-Score: mittlerer quadratischer Fehler der Prozente (0 = perfekt, kleiner = besser); die
             Grundrate ist die Messlatte „immer die übliche Häufigkeit sagen". Unsere Prozente mischen je
             Modell eine Normalverteilung mit seinem typischen Restfehler; der Streuungsfaktor ist so
-            gewählt, dass der Brier-Score in der Rückschau minimal wird. Gut kalibriert heißt: „tatsächlich"
-            ≈ „Ø gesagt".
+            gewählt, dass der Brier-Score in der Rückschau minimal wird. Die Werte oben rechnen an jedem
+            Prüfzeitpunkt mit dem Faktor, der damals gewählt war — nicht mit dem nachträglich besten.
+            Gut kalibriert heißt: „tatsächlich" ≈ „Ø gesagt".
           </p>
         </section>
       )}

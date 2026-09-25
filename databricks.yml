@@ -1,17 +1,11 @@
-# Wind Cockpit auf Databricks — Bundle-Definition.
+# Wind Cockpit auf Databricks — Bundle-Definition: die DATENBASIS (Erfassungs-Job + Lern-Job).
 #
 # Bewusst workspace-neutral (keine URL/IDs/E-Mail hart drin). Der Zielworkspace kommt aus dem
 # CLI-Profil (`-p <profil>`) oder DATABRICKS_HOST. Deploy-Anleitung: DATABRICKS.md.
 #
-# ── Zwei Betriebsarten ─────────────────────────────────────────────────────────────────────
-#   -t dev  (Vorgabe)  NUR Daten: Erfassungs-Job + Lern-Job. Keine App.
-#   -t app             zusätzlich die Next.js-App und die Start-/Stopp-Jobs.
-#
-# Die App ist absichtlich NICHT im Standard-Target. Sie war früher hier drin, und weil
-# Erfassung und App im selben Bundle lagen, hätte ein Deploy zum Aktualisieren des Jobs die
-# gelöschte App jedes Mal wieder angelegt. Die Oberfläche ist entbehrlich: Erfassung UND
-# Lernen laufen als Jobs (scripts/ingest_job.py, scripts/skill_job.py), die App liest nur.
-# Wer sie lokal ansehen will, braucht kein Deployment — siehe README.
+# Die Oberfläche gehört NICHT hierher: sie ist eine reine Leseansicht und läuft auf Vercel
+# (README). Erfassung UND Lernen laufen als Jobs (scripts/ingest_job.py, scripts/skill_job.py);
+# die App kann jederzeit fehlen, ohne dass Daten oder Gelerntes stehen bleiben.
 
 bundle:
   name: windguru
@@ -21,15 +15,13 @@ include:
 
 variables:
   app_name:
-    description: >-
-      Namenspräfix für Jobs und (im Target „app") die Databricks App. Harte Plattformgrenze
-      für App-Namen: höchstens 26 Zeichen, nur Kleinbuchstaben, Ziffern und Bindestriche.
+    description: Namenspräfix der Jobs.
     default: windguru
 
   lakebase_project:
     description: >-
-      Lakebase-Projekt (Postgres). Trägt Spots + Snapshot-Historie. Wird vor dem ersten
-      Deploy angelegt (siehe DATABRICKS.md) — Lakebase-Projekte sind keine DAB-Ressource.
+      Lakebase-Projekt (Postgres). Trägt Spots + Datenhistorie. Wird vor dem ersten Deploy
+      angelegt (scripts/setup.mjs) — Lakebase-Projekte sind keine DAB-Ressource.
     default: windguru
 
   lakebase_branch:
@@ -37,83 +29,12 @@ variables:
     default: production
 
   lakebase_schema:
-    description: >-
-      Postgres-Schema, in dem alle Tabellen liegen. Muss zu LAKEBASE_SCHEMA in app.yaml passen.
+    description: Postgres-Schema, in dem alle Tabellen liegen (LAKEBASE_SCHEMA der Vercel-App).
     default: windguru
 
-  lifecycle_pause:
-    description: >-
-      Nur im Target „app": UNPAUSED = App läuft täglich 6–23 Uhr (Start-/Stopp-Jobs aktiv).
-    default: UNPAUSED
-
 targets:
-  # Vorgabe: nur die Datenbasis. Der vorgebaute Standalone-Server wird hier nicht gebraucht,
-  # deshalb auch kein sync.include für .next/ — das Deployment bleibt klein.
   dev:
     default: true
 
   prod:
     mode: production
-
-  # Opt-in: zusätzlich die Oberfläche als Databricks App.
-  app:
-    # Der vorgebaute Standalone-Server liegt unter .next/ (in .gitignore). DABs respektiert
-    # .gitignore; sync.include zwingt genau diese Artefakte trotzdem ins Deployment. Ohne das
-    # findet run-app.mjs `.next/standalone/server.js` nicht und die App crasht.
-    sync:
-      include:
-        - .next/standalone/**
-        - .next/static/**
-    resources:
-      apps:
-        windguru:
-          name: ${var.app_name}
-          description: >-
-            Wind Cockpit — Brouwersdam & Mirns auf einen Blick: aktuelle Werte, Modell-Konsens,
-            Trend gegenüber früheren Datenständen.
-          source_code_path: .
-          resources:
-            # Lakebase Postgres. CAN_CONNECT_AND_CREATE, damit der Service Principal sein
-            # eigenes Schema anlegen und besitzen darf. Die Plattform spritzt
-            # PGHOST/PGDATABASE/PGUSER/LAKEBASE_ENDPOINT beim Start ein — src/lib/lakebase.ts
-            # liest genau diese.
-            - name: postgres
-              postgres:
-                branch: projects/${var.lakebase_project}/branches/${var.lakebase_branch}
-                # Zwei Namen: der RESSOURCEN-Name der DB ist mit Bindestrich
-                # (`databricks-postgres`), der PG-Datenbankname mit Unterstrich
-                # (`databricks_postgres`, den spritzt die Plattform als PGDATABASE ein).
-                database: projects/${var.lakebase_project}/branches/${var.lakebase_branch}/databases/databricks-postgres
-                permission: CAN_CONNECT_AND_CREATE
-          permissions:
-            - user_name: ${workspace.current_user.userName}
-              level: CAN_MANAGE
-
-      jobs:
-        windguru_app_start:
-          name: "${var.app_name} — App-Start (6 Uhr)"
-          schedule:
-            quartz_cron_expression: "0 0 6 * * ?"
-            timezone_id: Europe/Berlin
-            pause_status: ${var.lifecycle_pause}
-          tasks:
-            - task_key: start_app
-              notebook_task:
-                notebook_path: scripts/app_lifecycle.py
-                base_parameters:
-                  action: start
-                  app_name: ${var.app_name}
-
-        windguru_app_stop:
-          name: "${var.app_name} — App-Stopp (23 Uhr)"
-          schedule:
-            quartz_cron_expression: "0 0 23 * * ?"
-            timezone_id: Europe/Berlin
-            pause_status: ${var.lifecycle_pause}
-          tasks:
-            - task_key: stop_app
-              notebook_task:
-                notebook_path: scripts/app_lifecycle.py
-                base_parameters:
-                  action: stop
-                  app_name: ${var.app_name}

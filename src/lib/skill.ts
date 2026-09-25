@@ -1,15 +1,12 @@
 import "server-only";
 import { prisma } from "./prisma";
-import type { SpotParams } from "./calib";
 
 /**
  * Lesezugriff auf die gelernte Modellgüte.
  *
- * Gelernt wird NICHT mehr hier: das macht `scripts/skill_job.py` als eigener Databricks-Job.
- * Solange das Lernen in der App lief (gestartet aus instrumentation.ts), fror es ein, sobald
- * die App gestoppt oder gelöscht war — die Rohdaten wuchsen weiter, Modellgüte und
- * Nachkorrektur standen still. Jetzt ist das Lernen eine Eigenschaft der Datenbasis; die App
- * liest nur das Ergebnis und wendet es über calib.ts/consensus.ts auf die Anzeige an.
+ * Gelernt wird NICHT hier, sondern in `scripts/skill_job.py` (eigener Databricks-Job): so
+ * läuft das Lernen weiter, auch wenn die App fehlt. Die App liest nur das Ergebnis und wendet
+ * es über calib.ts/consensus.ts auf die Anzeige an.
  *
  * Wer die Mathematik ändert, muss BEIDE Seiten ändern: scripts/skill_job.py (lernen) und
  * src/lib/calib.ts + src/lib/consensus.ts (anwenden).
@@ -37,10 +34,4 @@ export async function loadSkillRows(spotId: number): Promise<SkillRow[]> {
     samples: r.samples,
     score: r.score,
   }));
-}
-
-/** Gelernte Parameter eines Spots (für den Konsens); null = noch keine → Prior. */
-export async function loadSpotParams(spotId: number): Promise<SpotParams | null> {
-  const s = await prisma.spotStat.findUnique({ where: { spotId }, select: { params: true } });
-  return (s?.params as unknown as SpotParams | null) ?? null;
 }

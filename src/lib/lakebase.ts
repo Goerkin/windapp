@@ -9,12 +9,13 @@ import { Pool } from "pg";
  * aufgerufen; zusammen mit begrenzter Verbindungslebensdauer nimmt jede frische Verbindung
  * automatisch ein frisches Token.
  *
- * Drei Betriebsarten, in dieser Reihenfolge:
- *   1. PG_FORCE_ADAPTER=1 → Pool aus DATABASE_URL, kein Token (lokaler Adapter-Test).
- *   2. In einer Databricks App → Plattform spritzt PGHOST/PGDATABASE/LAKEBASE_ENDPOINT ein.
- *   3. Sonst (lokal/CI mit Databricks-Profil) → Endpoint aus Projekt/Branch, Host per REST.
+ * Betriebsarten:
+ *   - Vercel (WIND_DB=lakebase): Host aus PGHOST, Token per Service Principal
+ *     (DATABRICKS_CLIENT_ID/SECRET, nur Leserechte auf das Schema) — siehe README.
+ *   - WIND_DB=lakebase ohne PGHOST, aber mit LAKEBASE_ENDPOINT: Host per REST aufgelöst.
+ *   - PG_FORCE_ADAPTER=1: Pool aus DATABASE_URL, kein Token (lokaler Adapter-Test).
  *
- * Ist keine erfüllt (lokal), läuft alles auf dem normalen Postgres-Pfad (DATABASE_URL).
+ * Sonst (lokal) läuft alles auf dem normalen Postgres-Pfad (DATABASE_URL).
  */
 
 const TOKEN_TTL_MS = 40 * 60 * 1000;

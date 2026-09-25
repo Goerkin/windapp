@@ -14,7 +14,7 @@ function buildClient(): PrismaClient {
 
   // Immer über den pg-Treiber-Adapter (queryCompiler-Client hat keine eigene Engine).
   // Lokal ist der Pool eine normale Postgres, im Lakebase-Modus eine mit Token-Erneuerung.
-  // Das Schema MUSS dem Adapter mitgegeben werden: lokal "public", als App "windguru".
+  // Das Schema MUSS dem Adapter mitgegeben werden: lokal "public", auf Vercel "windguru".
   const schema = process.env.LAKEBASE_SCHEMA || "public";
   return new PrismaClient({
     adapter: new PrismaPg(makePgPool(), { schema }),

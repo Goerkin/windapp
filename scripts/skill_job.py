@@ -9,7 +9,7 @@
 # Dieser Job macht das Lernen zur Eigenschaft der DATENBASIS, nicht der Oberfläche.
 #
 # Faithful port von src/lib/calib.ts (Modell) + src/lib/consensus.ts (Gewichtung) +
-# src/lib/skill.ts (rollierende, ehrliche Verifikation). Die App liest nur noch das Ergebnis
+# dem früheren src/lib/skill.ts (rollierende, ehrliche Verifikation). Die App liest nur das Ergebnis
 # aus SpotStat/ModelSkill und wendet es über calib.ts/consensus.ts auf die Anzeige an — beide
 # Seiten müssen daher dieselbe Mathematik rechnen. Änderungen an der Mathematik gehören in
 # BEIDE Dateien.
@@ -186,7 +186,7 @@ def features_matrix(fc, dir_deg, dT):
 
 
 class ModelRun:
-    """Ein Modelllauf (= eine ModelSeries-Zeile), vorbereitet für schnelle Interpolation."""
+    """Eine Modell-Reihe (= eine ModelRun-Zeile), vorbereitet für schnelle Interpolation."""
 
     __slots__ = ("id_model", "model_name", "resolution", "init_stamp", "times", "series")
 
@@ -277,7 +277,7 @@ def weighted_fraction(samples, kn):
 
 
 # ════════════════════════════════════════════════════════════════════════════════════════
-#  Port von src/lib/skill.ts — rollierendes, ehrliches Lernen
+#  Rollierendes, ehrliches Lernen (früher in src/lib/skill.ts, dort nur noch der Leser)
 # ════════════════════════════════════════════════════════════════════════════════════════
 
 TH_MIN = 13.0  # Mindestwind (kn) — muss zu TH.min in src/lib/kite.ts passen
@@ -487,11 +487,15 @@ def compute_spot(conn, spot):
         return np.array([water_at(t) if water_at(t) is not None else np.nan for t in ts])
 
     # ── 1. Modellläufe deduplizieren: je Modell höchstens ein Lauf pro 6 h ──────────────
+    # Jede Reihe steht in "ModelRun" nur einmal; ihr erster Abruf liefert die Wassertemperatur
+    # des Windguru-Headers als Rückfall.
     cur.execute(
-        'SELECT ms.id, ms."idModel", ms."initStamp", ms.resolution, s."fetchedAt", s."waterTemp" '
-        'FROM "ModelSeries" ms JOIN "Snapshot" s ON s.id = ms."snapshotId" '
+        'SELECT r.id, r."idModel", r."initStamp", r.resolution, min(s."fetchedAt") AS first, '
+        '(array_agg(s."waterTemp" ORDER BY s."fetchedAt"))[1] '
+        'FROM "SnapshotRun" x JOIN "Snapshot" s ON s.id = x."snapshotId" '
+        'JOIN "ModelRun" r ON r.id = x."runId" '
         'WHERE s."spotId" = %s AND s.ok AND s."fetchedAt" >= %s '
-        'ORDER BY ms."idModel", ms."initStamp", s."fetchedAt"',
+        'GROUP BY r.id ORDER BY r."idModel", r."initStamp", first',
         [spot_id, utc_naive(win_start)])
     metas, meta_idx, picked = [], {}, []
     last_model, last_init = -1, float("-inf")
@@ -514,7 +518,7 @@ def compute_spot(conn, spot):
         ph2 = ",".join(["%s"] * len(chunk))
         cur.execute(
             f'SELECT id, "idModel", "modelName", resolution, "initStamp", series '
-            f'FROM "ModelSeries" WHERE id IN ({ph2})', [sid for sid, _ in chunk])
+            f'FROM "ModelRun" WHERE id IN ({ph2})', [sid for sid, _ in chunk])
         for sid, id_model, model_name, resolution, init_stamp, series in cur.fetchall():
             run = ModelRun(id_model, model_name, resolution, init_stamp,
                            series if isinstance(series, dict) else json.loads(series or "{}"))
@@ -560,8 +564,9 @@ def compute_spot(conn, spot):
 
     # ── 3. Verifikations-Stichtage (ganze Snapshots, zum Nachrechnen des Konsens) ───────
     cur.execute(
-        'SELECT id FROM "Snapshot" WHERE "spotId" = %s AND ok AND "fetchedAt" >= %s '
-        'AND "fetchedAt" <= %s ORDER BY "fetchedAt" ASC',
+        'SELECT id FROM "Snapshot" s WHERE "spotId" = %s AND ok AND "fetchedAt" >= %s '
+        'AND "fetchedAt" <= %s AND EXISTS (SELECT 1 FROM "SnapshotRun" x WHERE x."snapshotId" = s.id) '
+        'ORDER BY "fetchedAt" ASC',
         [spot_id,
          utc_naive(win_start + VERIF_MIN_HISTORY_D * 86400),
          utc_naive(now_sec - 6 * 3600)])
@@ -570,10 +575,48 @@ def compute_spot(conn, spot):
     verif_ids = snap_ids[::step]
 
     v_acc = {v["key"]: [{"abs": 0.0, "err": 0.0, "hit": 0, "n": 0} for _ in VERIF_LEADS] for v in VARIANTS}
-    scatter = {v["key"]: [] for v in VARIANTS}
     prob_rec = {v["key"]: [[] for _ in SIGMA_SCALES] for v in VARIANTS}
-    frac_rec = {v["key"]: [] for v in VARIANTS}
     nc_pairs = {v["key"]: [] for v in VARIANTS}
+    core_li = [l for l, _ in VERIF_LEADS].index(VERIF_CORE_LEAD)
+    one = SIGMA_SCALES.index(1.0)
+
+    # Was das SYSTEM zum jeweiligen Stichtag geliefert hätte: Variante und Streuungsfaktor so
+    # gewählt, wie es die Regel mit den Vergleichen BIS DAHIN getan hätte. Nur diese Zahlen
+    # werden als Güte berichtet. Würde man stattdessen die am Ende beste Variante mit
+    # denselben Fällen bewerten, mit denen sie ausgewählt wurde, sähe sie besser aus als sie
+    # ist (Auswahl-Verzerrung).
+    sys_acc = [{"abs": 0.0, "err": 0.0, "hit": 0, "n": 0} for _ in VERIF_LEADS]
+    sys_scatter, sys_prob, sys_frac, sys_path = [], [], [], []
+
+    def brier(xs):
+        return (sum((p - o) ** 2 for p, o in xs) / len(xs)) if xs else None
+
+    def mean_mae(key):
+        with_data = [a for a in v_acc[key] if a["n"] > 0]
+        return (sum(a["abs"] / a["n"] for a in with_data) / len(with_data)) if with_data else None
+
+    def choose_variant():
+        """Einfachste Variante innerhalb SELECT_TOL_KN der besten — erst ab SELECT_MIN_N
+        Vergleichen @24 h, sonst die Standard-Variante."""
+        if v_acc[DEFAULT_VARIANT][core_li]["n"] < SELECT_MIN_N:
+            return DEFAULT_VARIANT
+        maes = {v["key"]: jround(m, 2) for v in VARIANTS if (m := mean_mae(v["key"])) is not None}
+        if not maes:
+            return DEFAULT_VARIANT
+        best = min(maes.values())
+        return next((v["key"] for v in VARIANTS
+                     if v["key"] in maes and maes[v["key"]] <= best + SELECT_TOL_KN), DEFAULT_VARIANT)
+
+    def choose_scale(key):
+        """Index des Brier-besten Streuungsfaktors — erst ab PROB_MIN_N Vergleichen, sonst 1.0."""
+        recs = prob_rec[key]
+        best_idx = one
+        if len(recs[one]) >= PROB_MIN_N:
+            for i, r in enumerate(recs):
+                b_i, b_best = brier(r), brier(recs[best_idx])
+                if b_i is not None and (b_best is None or b_i < b_best):
+                    best_idx = i
+        return best_idx
 
     stats = {}
     ptr = 0
@@ -602,8 +645,9 @@ def compute_spot(conn, spot):
             f'ORDER BY "fetchedAt" ASC', batch)
         snaps = cur.fetchall()
         cur.execute(
-            f'SELECT "snapshotId", "idModel", "modelName", resolution, "initStamp", series '
-            f'FROM "ModelSeries" WHERE "snapshotId" IN ({ph3})', batch)
+            f'SELECT x."snapshotId", r."idModel", r."modelName", r.resolution, r."initStamp", r.series '
+            f'FROM "SnapshotRun" x JOIN "ModelRun" r ON r.id = x."runId" '
+            f'WHERE x."snapshotId" IN ({ph3})', batch)
         runs_by_snap = {}
         for snap_id, id_model, model_name, resolution, init_stamp, series in cur.fetchall():
             runs_by_snap.setdefault(snap_id, []).append(ModelRun(
@@ -631,7 +675,13 @@ def compute_spot(conn, spot):
             if wtemp is None:
                 wtemp = None if snap_water is None else float(snap_water)
 
+            # Stand der Auswahl VOR diesem Stichtag (nur frühere Vergleiche).
+            sys_v = choose_variant()
+            sys_si = choose_scale(sys_v)
+            sys_path.append(sys_v)
+
             for v in VARIANTS:
+                is_sys = v["key"] == sys_v
                 cons = consensus_wind(runs, grid, params_F, v, wtemp)
                 acc_v = v_acc[v["key"]]
                 for li, (lead_h, _label) in enumerate(VERIF_LEADS):
@@ -641,25 +691,29 @@ def compute_spot(conn, spot):
                     if p is None or meas is None:
                         continue
                     err = p["wind"] - meas
-                    a = acc_v[li]
-                    a["abs"] += abs(err)
-                    a["err"] += err
-                    a["n"] += 1
-                    if abs(err) <= VERIF_TOL_KN:
-                        a["hit"] += 1
-                    if lead_h == VERIF_CORE_LEAD and len(scatter[v["key"]]) < VERIF_MAX_SCATTER:
-                        scatter[v["key"]].append(
-                            {"leadH": lead_h, "forecast": r1(p["wind"]), "measured": r1(meas)})
-                    frac = weighted_fraction(p["samples"], TH_MIN)
-                    if frac is not None:
-                        frac_rec[v["key"]].append((frac, 1 if meas >= TH_MIN else 0))
+                    for a in ([acc_v[li], sys_acc[li]] if is_sys else [acc_v[li]]):
+                        a["abs"] += abs(err)
+                        a["err"] += err
+                        a["n"] += 1
+                        if abs(err) <= VERIF_TOL_KN:
+                            a["hit"] += 1
+                    obs = 1 if meas >= TH_MIN else 0
+                    if is_sys:
+                        if lead_h == VERIF_CORE_LEAD and len(sys_scatter) < VERIF_MAX_SCATTER:
+                            sys_scatter.append(
+                                {"leadH": lead_h, "forecast": r1(p["wind"]), "measured": r1(meas)})
+                        frac = weighted_fraction(p["samples"], TH_MIN)
+                        if frac is not None:
+                            sys_frac.append((frac, obs))
                     # Wahrscheinlichkeit je Streuungsfaktor — aus DENSELBEN Beiträgen
                     # abgeleitet statt den Konsens viermal neu zu rechnen (σ skaliert nur
                     # die Mischverteilung, nicht die Gewichte).
                     for si, s in enumerate(SIGMA_SCALES):
                         pa = mixture_prob(p["samples"], TH_MIN, s)
                         if pa is not None:
-                            prob_rec[v["key"]][si].append((pa, 1 if meas >= TH_MIN else 0))
+                            prob_rec[v["key"]][si].append((pa, obs))
+                            if is_sys and si == sys_si:
+                                sys_prob.append((pa, obs))
                 # Nowcast-Paare: Abweichung jetzt und k Stunden später
                 m0 = meas_by_hour.get(base)
                 c0 = cons.get(base)
@@ -671,42 +725,25 @@ def compute_spot(conn, spot):
                         ek.append(None if (mk is None or ck is None) else mk - ck["wind"])
                     nc_pairs[v["key"]].append((m0 - c0["wind"], ek))
 
-    # ── 4. Variante wählen ──────────────────────────────────────────────────────────────
+    # ── 4. Variante wählen (mit ALLEN Vergleichen — gilt ab jetzt) ──────────────────────
+    # Die Tabelle je Variante ist die Rückschau über das ganze Fenster: zum Vergleichen der
+    # Varianten untereinander, NICHT die berichtete Güte (die steht in sys_*).
     variant_scores = []
     for v in VARIANTS:
         acc_v = v_acc[v["key"]]
         leads = [{"leadH": lead_h, "n": acc_v[li]["n"],
                   "mae": r1(acc_v[li]["abs"] / acc_v[li]["n"]) if acc_v[li]["n"] else None}
                  for li, (lead_h, _l) in enumerate(VERIF_LEADS)]
-        with_data = [a for a in acc_v if a["n"] > 0]
-        mean_mae = (sum(a["abs"] / a["n"] for a in with_data) / len(with_data)) if with_data else None
+        m = mean_mae(v["key"])
         variant_scores.append({"key": v["key"], "label": v["label"],
-                               "meanMae": None if mean_mae is None else jround(mean_mae, 2),
+                               "meanMae": None if m is None else jround(m, 2),
                                "leads": leads})
-    core_li = [l for l, _ in VERIF_LEADS].index(VERIF_CORE_LEAD)
-    n24 = v_acc[DEFAULT_VARIANT][core_li]["n"]
-    chosen = DEFAULT_VARIANT
-    if n24 >= SELECT_MIN_N:
-        scored = [v for v in variant_scores if v["meanMae"] is not None]
-        if scored:
-            best = min(v["meanMae"] for v in scored)
-            chosen = next((v["key"] for v in scored if v["meanMae"] <= best + SELECT_TOL_KN), DEFAULT_VARIANT)
+    chosen = choose_variant()
 
     # ── 5. Wahrscheinlichkeit kalibrieren (Brier) ───────────────────────────────────────
-    def brier(xs):
-        return (sum((p - o) ** 2 for p, o in xs) / len(xs)) if xs else None
-
-    recs = prob_rec[chosen]
-    one = SIGMA_SCALES.index(1.0)
-    n_prob = len(recs[one])
-    best_idx = one
-    if n_prob >= PROB_MIN_N:
-        for i, r in enumerate(recs):
-            b_i, b_best = brier(r), brier(recs[best_idx])
-            if b_i is not None and (b_best is None or b_i < b_best):
-                best_idx = i
-    sigma_scale = SIGMA_SCALES[best_idx]
-    dressed = recs[best_idx]
+    sigma_scale = SIGMA_SCALES[choose_scale(chosen)]
+    n_prob = len(sys_prob)
+    dressed = sys_prob
     base_rate = (sum(o for _p, o in dressed) / len(dressed)) if dressed else None
     bins = [0, 0.2, 0.4, 0.6, 0.8, 1.0001]
     reliability = []
@@ -769,8 +806,8 @@ def compute_spot(conn, spot):
         })
     skill.sort(key=lambda r: -r["score"])
 
-    # ── 9. Verifikations-Blob (gewählte Variante) ───────────────────────────────────────
-    c_acc = v_acc[chosen]
+    # ── 9. Verifikations-Blob: was das System jeweils geliefert hätte ───────────────────
+    c_acc = sys_acc
     leads = []
     for li, (lead_h, label) in enumerate(VERIF_LEADS):
         a = c_acc[li]
@@ -785,8 +822,11 @@ def compute_spot(conn, spot):
             "hitToleranceKn": VERIF_TOL_KN,
             "obsHours": len(meas_by_hour),
             "leads": leads,
-            "scatter": scatter[chosen],
+            "scatter": sys_scatter,
             "outOfSample": True,
+            # Variante/Streuung je Stichtag nur aus früheren Vergleichen gewählt.
+            "prequential": True,
+            "switches": sum(1 for a, b in zip(sys_path, sys_path[1:]) if a != b),
             "snapshots": len(verif_ids),
             "chosen": chosen,
             "variants": variant_scores,
@@ -795,7 +835,7 @@ def compute_spot(conn, spot):
                 "n": n_prob,
                 "sigmaScale": sigma_scale,
                 "brierDressed": r3(brier(dressed)),
-                "brierFraction": r3(brier(frac_rec[chosen]) or 0),
+                "brierFraction": r3(brier(sys_frac) or 0),
                 "brierClimate": None if base_rate is None else r3(base_rate * (1 - base_rate)),
                 "reliability": reliability,
             },

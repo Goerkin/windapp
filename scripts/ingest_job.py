@@ -1,16 +1,12 @@
 # Databricks notebook source
-# 24/7-Datenerfassung für das Windguru-Dashboard — als serverless Databricks-Job.
-# psycopg2-binary wird über die Serverless-Environment des Jobs vorinstalliert
-# (resources/windguru_ingest.job.yml → environments), nicht per %pip zur Laufzeit.
+# 24/7-Datenerfassung für das Wind Cockpit — als serverless Databricks-Job (alle 30 min).
+# Der Postgres-Treiber pg8000 kommt über die Serverless-Environment des Jobs
+# (resources/windguru_ingest.job.yml → environments); psycopg2 crasht auf Serverless.
 #
-# Warum Python (statt des in die App eingebauten Node-Pollers): Databricks Apps laufen nur
-# im Fenster 6–23 Uhr (Lifecycle-Job), der eingebaute Poller sammelt also nur tagsüber. Für
-# eine durchgehende Historie (Trends!) zieht dieser Job rund um die Uhr alle 30 min die
-# Windguru-Daten und schreibt sie in dieselbe Lakebase-Postgres wie die App.
-#
-# Faithful port von src/lib/windguru.ts (fetch) + src/lib/ingest.ts (DB-Writes). Die App
-# LIEST die Daten (Konsens/Trend werden zur Laufzeit berechnet) — hier wird nur roh
-# geschrieben, exakt in das Prisma-Schema (Tabellen "Snapshot"/"ModelSeries"/"StationObs").
+# Einer von genau zwei Schreibpfaden in die DB (der andere ist der Lern-Job). Die App liest
+# nur. Hier wird roh geschrieben, exakt in das Prisma-Schema: "Snapshot" (ein Abruf),
+# "ModelRun" (jede Modell-Reihe GENAU EINMAL, Schlüssel = Windgurus `rundef`),
+# "SnapshotRun" (welcher Abruf welche Reihen sah), "StationObs", "WaterTemp".
 #
 # Lokal testbar über DATABASE_URL (dann keine Databricks-Auth nötig):
 #   DATABASE_URL=postgres://… LAKEBASE_SCHEMA=public python scripts/ingest_job.py
@@ -148,24 +144,30 @@ def fetch_model(id_spot, m):
     }
 
 
-def fetch_station_windguru(id_station):
-    data = wg_get({"q": "station_data_current", "id_station": id_station},
+def fetch_station_windguru(id_station, hours):
+    """10-min-Mittel der letzten `hours` Stunden. Bei jedem Lauf wird das ganze Fenster neu
+    geholt und idempotent geschrieben — ein ausgefallener Lauf hinterlässt so keine Lücke,
+    und das Stundenmittel fürs Lernen beruht auf 6 Werten statt auf 1–2 Momentaufnahmen.
+    from/to als ISO-Zeit mit „Z" (UTC); ohne Zone deutet Windguru sie als Ortszeit."""
+    now = dt.datetime.now(dt.timezone.utc)
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
+    data = wg_get({"q": "station_data", "id_station": id_station,
+                   "from": (now - dt.timedelta(hours=hours)).strftime(fmt),
+                   "to": now.strftime(fmt), "avg_minutes": 10, "graph_info": 1},
                   f"https://www.windguru.cz/station/{id_station}")
-    ut = data.get("unixtime")
-    if ut is None:
-        return None
-    return {
-        "unixtime": int(ut),
-        "windAvg": _num(data.get("wind_avg")),
-        "windMax": _num(data.get("wind_max")),
-        "windMin": _num(data.get("wind_min")),
-        "windDir": _num(data.get("wind_direction")),
-        "temp": _num(data.get("temperature")),
-    }
+    ts = data.get("unixtime") or []
+    col = lambda k: data.get(k) or [None] * len(ts)
+    avg, mx, mn, wd, tp = (col("wind_avg"), col("wind_max"), col("wind_min"),
+                           col("wind_direction"), col("temperature"))
+    return [{"unixtime": int(t), "windAvg": _num(avg[i]), "windMax": _num(mx[i]),
+             "windMin": _num(mn[i]), "windDir": _num(wd[i]), "temp": _num(tp[i])}
+            for i, t in enumerate(ts) if t is not None and avg[i] is not None]
 
 
 def fetch_station_soarcast(location_id):
     # Ein Endpunkt liefert die aktuellen Werte aller NKV/soarcast-Stationen (Wind in m/s).
+    # Einen Verlauf bietet soarcast nicht an (geprüft 09/2026: scapi.php kennt nur den
+    # jeweils letzten 10-min-Wert) — hier bleibt es bei einem Wert je Lauf.
     r = requests.get(SOARCAST_MARKERS, headers={
         "User-Agent": UA, "Referer": "https://soarcast.nl/web/",
         "Origin": "https://soarcast.nl", "Accept": "application/json"}, timeout=30)
@@ -173,21 +175,22 @@ def fetch_station_soarcast(location_id):
     rows = r.json()
     row = next((x for x in rows if x.get("location_id") == location_id), None) if isinstance(rows, list) else None
     if not row or row.get("oldest_measurement_time") is None:
-        return None
+        return []
     kn = lambda v: (None if _num(v) is None else _num(v) * MS_TO_KN)
-    return {
+    return [{
         "unixtime": int(row["oldest_measurement_time"]),
         "windAvg": kn(row.get("windsnelheid")),
         "windMax": kn(row.get("windstoot")),
         "windMin": None,
         "windDir": _num(row.get("windrichting")),
         "temp": None,
-    }
+    }]
 
 
-def fetch_station(st):
+def fetch_station(st, hours):
+    """Messungen einer Station als Liste (Windguru: Verlauf, soarcast: nur aktueller Wert)."""
     return (fetch_station_soarcast(st["id"]) if st.get("source") == "soarcast"
-            else fetch_station_windguru(st["id"]))
+            else fetch_station_windguru(st["id"], hours))
 
 
 # ============================ Datenbank ============================
@@ -260,62 +263,123 @@ def _new_id():
     return "j" + uuid.uuid4().hex
 
 
+def _utc_naive(sec=None):
+    """Unix-Sekunden (Standard: jetzt) → naives UTC-datetime. Die Prisma-Spalten sind
+    `timestamp without time zone` und tragen UTC."""
+    t = time.time() if sec is None else sec
+    return dt.datetime.fromtimestamp(t, dt.timezone.utc).replace(tzinfo=None)
+
+
+# Eine gerade erst aufgetauchte Reihe wird noch so lange erneut abgerufen: Windguru
+# veröffentlicht manche Läufe schrittweise (GFS wuchs z. B. von 177 auf 181 Stunden). Danach
+# gilt eine bekannte `rundef` als fertig und wird nicht mehr heruntergeladen.
+RUN_REFRESH_H = 3
+
+
+def _series_len(series):
+    return sum(1 for v in (series.get("WINDSPD") or []) if v is not None)
+
+
+def store_runs(cur, sid, meta):
+    """Alle brauchbaren Modell-Reihen eines Spots sicherstellen → [(runId, koef)].
+
+    Bekannte `rundef` (älter als RUN_REFRESH_H) werden nicht heruntergeladen, nur verknüpft —
+    das spart den Großteil der Windguru-Anfragen."""
+    koef_map = (meta.get("blend") or {}).get("model_koef") or {}
+    wanted = [m for m in meta["models"]
+              if m["id_model"] not in SKIP_MODEL_IDS and m.get("rundef")]
+    known = {}
+    if wanted:
+        ph = ",".join(["%s"] * len(wanted))
+        cur.execute(
+            f'SELECT "idModel", rundef, id, "firstSeen", series FROM "ModelRun" '
+            f'WHERE "spotId" = %s AND rundef IN ({ph})',
+            [sid, *[m["rundef"] for m in wanted]])
+        for id_model, rundef, rid, first_seen, series in cur.fetchall():
+            known[(id_model, rundef)] = (rid, first_seen, series)
+
+    fresh_cut = _utc_naive(time.time() - RUN_REFRESH_H * 3600)
+    out, fetched = [], 0
+    for m in wanted:
+        koef = _num(koef_map.get(str(m["id_model"]), 1)) or 1
+        hit = known.get((m["id_model"], m["rundef"]))
+        if hit and hit[1] < fresh_cut:
+            out.append((hit[0], koef))
+            continue
+        try:
+            mf = fetch_model(sid, m)
+            fetched += 1
+            time.sleep(0.15)  # höflich zur API
+        except Exception:
+            mf = None  # einzelnes Modell darf ausfallen
+        if not mf:
+            if hit:
+                out.append((hit[0], koef))
+            continue
+        if hit:
+            old = hit[2] if isinstance(hit[2], dict) else json.loads(hit[2] or "{}")
+            if _series_len(mf["series"]) > _series_len(old):
+                cur.execute('UPDATE "ModelRun" SET series = %s::jsonb WHERE id = %s',
+                            (json.dumps(mf["series"]), hit[0]))
+            out.append((hit[0], koef))
+            continue
+        cur.execute(
+            'INSERT INTO "ModelRun" ("id","spotId","idModel","rundef","modelName",'
+            '"modelLongname","resolution","initStamp","series","firstSeen") '
+            'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb, now()) '
+            'ON CONFLICT ("spotId","idModel","rundef") DO NOTHING RETURNING id',
+            (_new_id(), sid, mf["idModel"], m["rundef"], mf["modelName"], mf["modelLongname"],
+             mf["resolution"], mf["initStamp"], json.dumps(mf["series"])))
+        row = cur.fetchone()
+        if row is None:  # parallel angelegt
+            cur.execute('SELECT id FROM "ModelRun" WHERE "spotId"=%s AND "idModel"=%s AND rundef=%s',
+                        (sid, mf["idModel"], m["rundef"]))
+            row = cur.fetchone()
+        out.append((row[0], koef))
+    return out, fetched
+
+
 def ingest(conn):
     # 0 (Standard) = unbegrenzt aufbewahren — für Saisonalitäten über Jahre.
     retention_days = int(param("SNAPSHOT_RETENTION_DAYS", "0"))
-    # Verdichtung: älter als THIN_AFTER_DAYS nur noch EIN Datenstand je Spot und THIN_KEEP_H
-    # Stunden. Grund: Lakebase Free Edition = 512 MB je Branch; der 30-min-Takt speichert
-    # denselben Modelllauf bis zu 12× (≈ 5 MB/Tag). Verdichtet ≈ 0.4 MB/Tag → Jahre Platz.
-    # Die App nutzt volle Auflösung nur für die letzten 21 Tage; das Lernen ohnehin ≤ 1 Lauf/6 h.
+    # Verdichtung: älter als THIN_AFTER_DAYS nur noch EIN Abruf je Spot und THIN_KEEP_H Stunden;
+    # Modell-Reihen, auf die dann kein Abruf mehr verweist, fallen mit weg. Das Lernen nutzt
+    # ohnehin höchstens einen Lauf je Modell und 6 h, die App volle Auflösung nur 21 Tage.
     thin_after_days = int(param("THIN_AFTER_DAYS", "21"))
     thin_keep_h = int(param("THIN_KEEP_H", "6"))
+    # So viele Stunden Stationsverlauf holt jeder Lauf nach (Windguru-Stationen).
+    station_back_h = int(param("STATION_BACKFILL_H", "6"))
     results = []
     with contextlib.closing(conn.cursor()) as cur:
         for sp in SPOTS:
             sid = sp["id"]
 
-            # 1) Live-Messungen ALLER Stationen (idempotent je Station+Messzeitpunkt) — immer.
+            # 1) Messungen ALLER Stationen (idempotent je Station+Messzeitpunkt) — immer.
             obs_stored = 0
             for st in sp.get("stations", []):
                 try:
-                    obs = fetch_station(st)
-                    if not obs:
-                        continue
-                    obs_time = dt.datetime.utcfromtimestamp(obs["unixtime"])
-                    cur.execute(
-                        'INSERT INTO "StationObs" '
-                        '("id","spotId","stationId","obsTime","fetchedAt",'
-                        '"windAvg","windMax","windMin","windDir","temp") '
-                        'VALUES (%s,%s,%s,%s, now(), %s,%s,%s,%s,%s) '
-                        'ON CONFLICT ("spotId","stationId","obsTime") DO UPDATE SET '
-                        '"windAvg"=EXCLUDED."windAvg","windMax"=EXCLUDED."windMax",'
-                        '"windMin"=EXCLUDED."windMin","windDir"=EXCLUDED."windDir",'
-                        '"temp"=EXCLUDED."temp"',
-                        (_new_id(), sid, st["id"], obs_time,
-                         obs["windAvg"], obs["windMax"], obs["windMin"],
-                         obs["windDir"], obs["temp"]))
-                    obs_stored += 1
+                    for obs in fetch_station(st, station_back_h):
+                        cur.execute(
+                            'INSERT INTO "StationObs" '
+                            '("id","spotId","stationId","obsTime","fetchedAt",'
+                            '"windAvg","windMax","windMin","windDir","temp") '
+                            'VALUES (%s,%s,%s,%s, now(), %s,%s,%s,%s,%s) '
+                            'ON CONFLICT ("spotId","stationId","obsTime") DO UPDATE SET '
+                            '"windAvg"=EXCLUDED."windAvg","windMax"=EXCLUDED."windMax",'
+                            '"windMin"=EXCLUDED."windMin","windDir"=EXCLUDED."windDir",'
+                            '"temp"=EXCLUDED."temp"',
+                            (_new_id(), sid, st["id"], _utc_naive(obs["unixtime"]),
+                             obs["windAvg"], obs["windMax"], obs["windMin"],
+                             obs["windDir"], obs["temp"]))
+                        obs_stored += 1
                 except Exception as e:
                     print(f"[ingest] Station {st.get('name')} ({sid}): {e}")
 
-            # 2) Forecast: alle brauchbaren Modelle als ein Snapshot.
+            # 2) Prognose: ein Abruf, der auf alle aktuellen Modell-Reihen verweist.
             try:
                 meta = fetch_spot_meta(sid)
-                koef_map = (meta.get("blend") or {}).get("model_koef") or {}
-                models = []
-                for m in meta["models"]:
-                    if m["id_model"] in SKIP_MODEL_IDS:
-                        continue
-                    try:
-                        mf = fetch_model(sid, m)
-                        if mf:
-                            mf["koef"] = _num(koef_map.get(str(m["id_model"]), 1)) or 1
-                            models.append(mf)
-                    except Exception:
-                        pass  # einzelnes Modell darf ausfallen
-                    time.sleep(0.15)  # höflich zur API
-
-                if not models:
+                runs, fetched = store_runs(cur, sid, meta)
+                if not runs:
                     results.append({"spot": sid, "error": "kein Modell lieferte Wind",
                                     "obs": obs_stored})
                     continue
@@ -329,16 +393,12 @@ def ingest(conn):
                     (snap_id, sid, meta["sunrise"], meta["sunset"],
                      meta["waterTemp"], meta["timezone"],
                      json.dumps(meta["blend"]) if meta.get("blend") is not None else None))
-                for mf in models:
+                for run_id, koef in runs:
                     cur.execute(
-                        'INSERT INTO "ModelSeries" '
-                        '("id","snapshotId","idModel","modelName","modelLongname",'
-                        '"resolution","koef","initStamp","series") '
-                        'VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)',
-                        (_new_id(), snap_id, mf["idModel"], mf["modelName"],
-                         mf["modelLongname"], mf["resolution"], mf["koef"],
-                         mf["initStamp"], json.dumps(mf["series"])))
-                results.append({"spot": sid, "models": len(models), "obs": obs_stored})
+                        'INSERT INTO "SnapshotRun" ("snapshotId","runId","koef") '
+                        'VALUES (%s,%s,%s) ON CONFLICT DO NOTHING', (snap_id, run_id, koef))
+                results.append({"spot": sid, "models": len(runs), "downloaded": fetched,
+                                "obs": obs_stored})
             except Exception as e:
                 results.append({"spot": sid, "error": str(e), "obs": obs_stored})
 
@@ -354,20 +414,23 @@ def ingest(conn):
         except Exception as e:
             results.append({"water": f"Fehler: {e}"})
 
-        # 5) Nur bei gesetzter Aufbewahrung alte Snapshots/Messungen löschen.
+        # 4) Nur bei gesetzter Aufbewahrung alte Abrufe/Messungen löschen.
         if retention_days > 0:
-            cutoff = dt.datetime.utcnow() - dt.timedelta(days=retention_days)
+            cutoff = _utc_naive(time.time() - retention_days * 86400)
             cur.execute('DELETE FROM "Snapshot" WHERE "fetchedAt" < %s', (cutoff,))
             cur.execute('DELETE FROM "StationObs" WHERE "obsTime" < %s', (cutoff,))
+            cur.execute('DELETE FROM "ModelRun" r WHERE r."firstSeen" < %s AND NOT EXISTS '
+                        '(SELECT 1 FROM "SnapshotRun" x WHERE x."runId" = r.id)', (cutoff,))
 
     conn.commit()
 
-    # 4) Verdichten — erst NACH dem Commit und in eigener Transaktion: ein Fehler hier darf
+    # 5) Verdichten — erst NACH dem Commit und in eigener Transaktion: ein Fehler hier darf
     #    die frisch geschriebenen Daten nie mitreißen. Je Spot und thin_keep_h-Zeitfenster
-    #    bleibt der früheste Datenstand; ModelSeries hängen per ON DELETE CASCADE dran.
+    #    bleibt der früheste Abruf; SnapshotRun hängt per ON DELETE CASCADE dran, danach
+    #    fallen die Reihen weg, auf die niemand mehr verweist.
     if thin_after_days > 0 and thin_keep_h > 0:
         try:
-            thin_cut = dt.datetime.utcnow() - dt.timedelta(days=thin_after_days)
+            thin_cut = _utc_naive(time.time() - thin_after_days * 86400)
             with contextlib.closing(conn.cursor()) as cur:
                 cur.execute(
                     'DELETE FROM "Snapshot" WHERE "id" IN ('
@@ -378,7 +441,10 @@ def ingest(conn):
                     '  FROM "Snapshot" WHERE "fetchedAt" < %s) x'
                     ' WHERE rn > 1)',
                     (thin_keep_h, thin_cut))
-                results.append({"thinned": cur.rowcount})
+                thinned = cur.rowcount
+                cur.execute('DELETE FROM "ModelRun" r WHERE r."firstSeen" < %s AND NOT EXISTS '
+                            '(SELECT 1 FROM "SnapshotRun" x WHERE x."runId" = r.id)', (thin_cut,))
+                results.append({"thinned": thinned, "runsDropped": cur.rowcount})
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -397,4 +463,7 @@ def main():
     return out
 
 
-main()
+# Der Job-Test (tests/jobs) importiert nur die Funktionen. Bewusst ein Opt-out statt
+# `if __name__ == "__main__"`: als Databricks-Notebook muss der Aufruf immer laufen.
+if os.environ.get("INGEST_IMPORT_ONLY") != "1":
+    main()

@@ -1,16 +1,12 @@
-# Datenerfassung: zieht 24/7 alle 30 Minuten die Windguru-Prognose + Live-Stationen (+ die
-# Wassertemperatur von Rijkswaterstaat) und
-# schreibt sie in dieselbe Lakebase-Postgres wie die App. Läuft bewusst UNABHÄNGIG vom
-# App-Fenster (6–23 Uhr), damit auch nachts durchgehend Historie für die Trends entsteht.
+# Datenerfassung: zieht 24/7 alle 30 Minuten die Windguru-Prognose, die Messstationen (bei
+# Windguru-Stationen den Verlauf der letzten Stunden, Lücken füllen sich so selbst) und die
+# Wassertemperatur von Rijkswaterstaat und schreibt sie nach Lakebase (scripts/ingest_job.py).
 #
-# Task ist ein serverless Notebook (scripts/ingest_job.py, installiert psycopg2 per %pip;
-# keine job_clusters, Serverless muss im Workspace aktiv sein). Der eingebaute App-Poller
-# ist dafür aus (POLL_ENABLED=0 in app.yaml) — sonst würde tagsüber doppelt geschrieben.
+# Serverless-Notebook-Task (keine job_clusters; Serverless muss im Workspace aktiv sein).
+# Treiber pg8000 über die Environment — psycopg2 crasht auf Serverless.
 #
-# Berechtigung: Der Job muss als eine Identität laufen, die in Lakebase in das Schema
-# schreiben darf (dieselben Rechte wie der App-Service-Principal). Standard: die deployende
-# Person. Falls die keine Schreibrechte auf das SP-eigene Schema hat, `run_as` auf den
-# App-Service-Principal setzen (Client-ID via `databricks apps get ${var.app_name}`).
+# Berechtigung: Der Job läuft als die deployende Person; sie muss in Lakebase in das Schema
+# schreiben dürfen (bei setup.mjs ist sie Eigentümerin der Tabellen).
 
 resources:
   jobs:
@@ -41,6 +37,8 @@ resources:
               # 0 = unbegrenzt aufbewahren (Saisonalität).
               SNAPSHOT_RETENTION_DAYS: "0"
               # Verdichtung (Lakebase Free Edition: 512 MB): älter als 21 Tage nur noch ein
-              # Datenstand je Spot und 6 h → ≈ 0.4 MB/Tag statt ≈ 5 MB/Tag.
+              # Abruf je Spot und 6 h; Modell-Reihen ohne Verweis fallen mit weg.
               THIN_AFTER_DAYS: "21"
               THIN_KEEP_H: "6"
+              # So viele Stunden Stationsverlauf holt jeder Lauf nach (Windguru-Stationen).
+              STATION_BACKFILL_H: "6"

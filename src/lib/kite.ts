@@ -282,11 +282,14 @@ export function summarizeDays(spot: SpotPayload, hours: HourEval[]): DaySummary[
 
     // Modell-Spitze: jedes Modell für sich (Ø seiner 3 stärksten Tageslicht-Stunden), dann
     // gewichteter Median. Unempfindlich dagegen, dass Modelle die Front zeitlich versetzt sehen.
+    // Gewicht = Summe seiner Stundengewichte AN DIESEM TAG — nicht der Anteil über 16 Tage,
+    // sonst zählten die hochauflösenden Kurzfrist-Modelle gerade morgen fast nichts.
     const peaks = spot.models
       .map((m) => {
         const vals = dayHours.map((h) => m.windAdj?.[h.i] ?? m.wind[h.i]);
         const n = vals.filter((v) => v != null).length;
-        return n >= 3 ? { v: topKMean(vals, 3)!, w: m.weight > 0 ? m.weight : 0.001 } : null;
+        const w = dayHours.reduce((a, h) => a + (m.wh?.[h.i] ?? 0), 0);
+        return n >= 3 ? { v: topKMean(vals, 3)!, w: w > 0 ? w : 0.001 } : null;
       })
       .filter((x): x is { v: number; w: number } => x != null);
 

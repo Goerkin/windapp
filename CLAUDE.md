@@ -18,22 +18,17 @@ Troubleshooting), In-App-Hilfe [src/app/hilfe/page.tsx](src/app/hilfe/page.tsx).
 ## Ersteinrichtung auf einem neuen Workspace
 
 Wenn der Nutzer „deployen/einrichten" will: **`node scripts/setup.mjs --profile <p>`**
-(idempotent) — das setzt die **Datenbasis** auf (Lakebase + Erfassungs-Job + Lern-Job), OHNE
-App. Vorher muss es ein angemeldetes CLI-Profil geben
+(idempotent) — das setzt die **Datenbasis** auf (Lakebase + Erfassungs-Job + Lern-Job). Die App
+läuft auf Vercel, nicht auf Databricks (den früheren Databricks-App-Weg gibt es nicht mehr). Vorher muss es ein angemeldetes CLI-Profil geben
 (`databricks auth login --host <url> --profile <p>`) und `npm install` gelaufen sein.
 Scheitert `create-project`: Free Edition erlaubt nur ein Lakebase-Projekt je Account →
 `--project <vorhandene-id>`.
-
-Die App ist **Opt-in** (`--with-app`, Bundle-Target `app`) und absichtlich nicht im
-Standard-Target: Erfassung und App lagen früher im selben Bundle, ein Deploy zum Aktualisieren
-des Jobs hätte die gelöschte App jedes Mal wieder angelegt. Erster App-Start dauert 10–15 min —
-nicht abbrechen, Status per `databricks apps get windguru -p <p>` prüfen.
 
 ## Architektur
 
 | Datei | Rolle |
 |---|---|
-| `scripts/ingest_job.py` | 24/7-Job (alle 30 min): Windguru-Prognosen (`iapi.php`, braucht `Referer`), Messstationen, Wassertemperatur → DB. Nutzt **pg8000** (psycopg2 crasht auf Serverless). Verdichtet Daten > 21 Tage auf 1 Stand/6 h. |
+| `scripts/ingest_job.py` | 24/7-Job (alle 30 min): Windguru-Prognosen (`iapi.php`, braucht `Referer`), Messstationen, Wassertemperatur → DB. Jede Modell-Reihe **einmal** in `ModelRun` (Schlüssel `rundef`, bekannte werden nicht neu geladen), Abruf → Reihen über `SnapshotRun`. Windguru-Stationen: 10-min-Verlauf der letzten 6 h je Lauf. Nutzt **pg8000** (psycopg2 crasht auf Serverless). Verdichtet Abrufe > 21 Tage auf 1 je 6 h. |
 | `scripts/skill_job.py` | Stündlicher Job: **das Lernen**. Portierung von calib.ts + consensus.ts + dem früheren skill.ts nach Python/numpy. Schreibt `ModelSkill`/`SpotStat` und gibt einen Gesundheitsbericht der Datenbasis aus. Konfiguration (Spots, Stationen, Wasser-Messstelle) liest er aus der Tabelle `Spot`. |
 | `src/lib/watertemp.ts` | Wassertemperatur LESEN (geschrieben wird sie im Erfassungs-Job) |
 | `config/spots.json` | **Einzige** Quelle der Spot-Stammdaten: IDs, Koordinaten, Windrichtungs-Sektoren, Stationen, Wasser-Messstellen |
@@ -43,9 +38,10 @@ nicht abbrechen, Status per `databricks apps get windguru -p <p>` prüfen.
 | `src/lib/consensus.ts` | Konsens je Stunde aus korrigierten, gewichteten Modellen |
 | `src/lib/data.ts` | Baut das Dashboard-Payload (`SpotPayload`) |
 | `src/lib/kite.ts` | Client-Logik: Schwellen (fix Twintip 80 kg), Richtung, Tageslicht, P(≥13 kn), Fahrfenster, Tages-Zusammenfassung |
-| `public/sw.js` + `src/app/manifest.ts` | PWA: installierbar auf dem Homescreen, zeigt ohne Netz den zuletzt geladenen Stand. Der Service Worker wird in `ServiceWorker.tsx` nur im Produktions-Build angemeldet. Neue Fassung greift erst, wenn `VERSION` in `sw.js` hochgezählt wird. Symbole in `public/` sind eingecheckt, erzeugt von `scripts/make-icons.mjs`. |
-| `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx` → `SpotOverview` (+ `ForecastGrid`) → `SpotPanel` (Tabs Verlauf/Tag). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel`/`AccuracyPanel`. |
-| `prisma/schema.prisma` | Tabellen: Spot, Snapshot, ModelSeries, StationObs, WaterTemp, ModelSkill, SpotStat |
+| `public/sw.js` + `src/app/manifest.ts` | PWA: installierbar auf dem Homescreen, zeigt ohne Netz den zuletzt geladenen Stand. Der Service Worker wird in `ServiceWorker.tsx` nur im Produktions-Build angemeldet. Ein Deploy erreicht die installierte App von allein (HTML/Daten immer zuerst aus dem Netz, JS-Dateien tragen den Inhalt im Namen); ein geänderter `sw.js` installiert sich ebenfalls selbst — `VERSION` steuert nur das Verwerfen der alten Caches, und zwar erst beim übernächsten Öffnen. Symbole in `public/` sind eingecheckt, erzeugt von `scripts/make-icons.mjs`. |
+| `src/components/*` | UI (Recharts). Einstieg `Dashboard.tsx` → `SpotOverview` (+ `ForecastGrid`) → `SpotPanel` (Tabs Verlauf/Tag). Analyse liegt auf eigener Route `/analyse` → `AnalysisView` → `ModelPanel` (+ `HourBreakdown`: Rechnung einer Konsens-Stunde) / `AccuracyPanel` (+ `LearnedPanel`: gelernte Korrekturen). |
+| `prisma/schema.prisma` | Tabellen: Spot, Snapshot, ModelRun, SnapshotRun, StationObs, WaterTemp, ModelSkill, SpotStat (+ ModelSeries: ALT, bis zur Umstellung, s. DATABRICKS.md) |
+| `scripts/migrate-runs.mjs` | Einmalige Umstellung ModelSeries → ModelRun (idempotent; `--drop-legacy` danach) |
 
 Spots stehen **nur** in `config/spots.json`. Die App (`spots.ts`), der Erfassungs-Job
 (`ingest_job.py`, sucht die Datei relativ zum Arbeitsverzeichnis, da Notebooks kein `__file__`
@@ -69,8 +65,10 @@ sie direkt, die des Lern-Jobs spiegelt `LEARN` in `calib.ts`. `tests/learn-confi
 bricht, wenn eine Konstante in `skill_job.py` geändert wird, ohne `LEARN` nachzuziehen — dann
 auch den Text der Hilfe prüfen.
 
-**Deploy**: Das Repo ist mit Vercel verbunden — ein Push auf `master` geht sofort live. CI
-(`.github/workflows/ci.yml`) prüft tsc, Lint, Tests und die Python-Jobs.
+**Deploy**: Das Repo ist mit Vercel verbunden — ein Push auf `master` geht sofort live (parallel
+zur CI, ein roter Lauf hält ihn nicht auf). CI (`.github/workflows/ci.yml`) prüft tsc, Lint,
+Tests und in einem zweiten Job beide Python-Jobs gegen ein echtes Postgres
+(`tests/jobs/e2e_test.py`). Jobs-Änderungen gehen erst mit `databricks bundle deploy` live.
 
 Lokal: Docker-Postgres `windguru-pg` (Port 5433, `.env`), `npx prisma db push && npm run seed`,
 Daten per `npm run mirror` (braucht `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `PGUSER`,
@@ -83,12 +81,11 @@ npx tsc --noEmit                 # Typprüfung
 npm test                         # Parity Python↔TS + Spot-Konfiguration (braucht python3 + numpy)
 npm run lint                     # 0 Fehler erwartet (13 bekannte Warnungen, s. eslint.config.mjs)
 npm run dev                      # lokal gegen Docker-Postgres windguru-pg auf Port 5433 (.env)
+TEST_DATABASE_URL=… npm run test:jobs  # beide Jobs gegen Postgres (nur Schema e2e_jobs)
 npm run mirror                   # echte Lakebase-Daten nach lokal spiegeln (nur Lesen → Schreiben lokal)
-npm run build:app                # Standalone-Build, nur für das Target „app" nötig
 
 databricks bundle validate -t dev -p <p>
-databricks bundle deploy  -t dev -p <p>               # Erfassungs- + Lern-Job (KEINE App)
-databricks bundle deploy  -t app -p <p>               # zusätzlich die App
+databricks bundle deploy  -t dev -p <p>               # Erfassungs- + Lern-Job
 databricks bundle run windguru_ingest -t dev -p <p>   # Datenabruf sofort
 databricks bundle run windguru_skill  -t dev -p <p>   # Lernlauf sofort
 node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach Lakebase pushen
@@ -129,5 +126,13 @@ node scripts/setup.mjs --profile <p> --data-only      # Schema-Änderungen nach 
 - Recharts: Mess-/Prognosezeilen im selben Datensatz → `connectNulls` an den Linien.
 - Hydration-Warnung „vor N min" beim Minutenwechsel ist harmlos (relTime). Ursache sind
   `Date.now()`-Aufrufe im Render; ESLint meldet das als 12 Warnungen (`react-hooks/purity`).
+- **Anteil über das ganze Raster ≠ Wichtigkeit.** `ModelView.weight` summiert die Gewichte über
+  16 Tage; Kurzfrist-Modelle (HARMONIE, ICON-D2 …) reichen 1–3 Tage und sähen damit immer
+  unwichtig aus. Anzeigen/Sortieren/Gewichten immer über die Stundengewichte `wh` des jeweiligen
+  Zeitraums (so in `ModelPanel`, `summarizeDays`, `SkillView.hourShare`).
+- Modell-Reihen sind oft aus mehreren Läufen zusammengesetzt (`rundef`, z. B. ECMWF 18z 0–144 h +
+  12z 156–360 h). `initStamp` ist nur der jüngste beteiligte Lauf.
+- `prisma db push --force-reset` verweigert Prisma, wenn ein KI-Agent es aufruft. Der Job-Test
+  verwirft deshalb nur sein eigenes Schema selbst (`DROP SCHEMA e2e_jobs`).
 - Die frühere Aussage „ESLint-Config ist kaputt" war falsch: der `FlatCompat`-Umweg war es.
   `eslint-config-next` 16 exportiert bereits Flat-Config-Arrays und wird direkt importiert.

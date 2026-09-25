@@ -18,8 +18,10 @@
 import { execFileSync } from "node:child_process";
 import pg from "pg";
 
-// Reihenfolge = Fremdschlüssel-Reihenfolge. ModelSeries hängt an Snapshot, StationObs an Spot.
-const TABLES = ["Spot", "Snapshot", "ModelSeries", "StationObs", "WaterTemp", "ModelSkill", "SpotStat"];
+// Reihenfolge = Fremdschlüssel-Reihenfolge. ModelRun hängt an Spot, SnapshotRun an Snapshot +
+// ModelRun. ModelSeries ist die Alttabelle (bis zur Umstellung, s. DATABRICKS.md) — fehlt eine
+// Tabelle auf einer Seite, wird sie übersprungen.
+const TABLES = ["Spot", "Snapshot", "ModelRun", "SnapshotRun", "ModelSeries", "StationObs", "WaterTemp", "ModelSkill", "SpotStat"];
 const BATCH = 250;
 
 const targetUrl = process.env.TARGET_URL || process.env.DATABASE_URL;
@@ -55,12 +57,17 @@ try {
     ).rows;
 
   // Erst leeren, in umgekehrter Reihenfolge; CASCADE erledigt die abhängigen Zeilen.
-  await dst.query(`TRUNCATE ${TABLES.map((t) => `"${targetSchema}"."${t}"`).join(", ")} CASCADE`);
+  const present = [];
+  for (const t of TABLES) {
+    const ok = (await dst.query(`SELECT to_regclass($1) IS NOT NULL AS ok`, [`"${targetSchema}"."${t}"`])).rows[0].ok;
+    if (ok) present.push(t);
+  }
+  await dst.query(`TRUNCATE ${present.map((t) => `"${targetSchema}"."${t}"`).join(", ")} CASCADE`);
   console.log("[mirror] Zieltabellen geleert");
 
   for (const table of TABLES) {
     const cols = await colsOf(table);
-    if (!cols.length) {
+    if (!cols.length || !present.includes(table)) {
       console.log(`[mirror] ${table}: in der Quelle nicht vorhanden — übersprungen`);
       continue;
     }
@@ -87,6 +94,12 @@ try {
     console.log(`[mirror] ${table}: ${rows.length} Zeilen`);
   }
   console.log("\x1b[32m[mirror] fertig.\x1b[0m");
+  const runs = present.includes("ModelRun")
+    ? Number((await dst.query(`SELECT count(*) AS n FROM "${targetSchema}"."ModelRun"`)).rows[0].n)
+    : 0;
+  if (present.includes("ModelSeries") && runs === 0) {
+    console.log("[mirror] Hinweis: Quelle noch vor der Umstellung? Dann lokal `node --env-file=.env scripts/migrate-runs.mjs`.");
+  }
 } finally {
   await src.end();
   await dst.end();

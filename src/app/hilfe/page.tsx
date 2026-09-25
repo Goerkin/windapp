@@ -127,9 +127,11 @@ export default function HelpPage() {
         </Item>
         <Item name="Tag">Stundenverlauf, Fenster und Tabelle (2-h-Raster) für einen Tag im Tageslicht.</Item>
         <Item name="Analyse">
-          Alle Einzelmodelle roh und korrigiert, welches Modell hier richtig liegt, welche Rechenvariante
-          gewinnt, ob die Prozente stimmen und wie genau der Konsens rückblickend war — also die{" "}
-          <b>aktuellen Zahlen</b> zu allem, was ab „Rechenweg“ beschrieben ist.
+          Alle Einzelmodelle roh und korrigiert, und für jede Stunde die komplette Rechnung („Wie entsteht der
+          Wert?“: Rohwert, Korrektur und Anteil jedes Modells — und welche Modelle warum fehlen). Dazu, was
+          das Lernen je Modell, Vorlauf und Windrichtung herausgefunden hat, welches Modell hier richtig
+          liegt, welche Rechenvariante gewinnt, ob die Prozente stimmen und wie genau der Konsens
+          rückblickend war — also die <b>aktuellen Zahlen</b> zu allem, was ab „Rechenweg“ beschrieben ist.
         </Item>
       </Section>
 
@@ -195,8 +197,11 @@ export default function HelpPage() {
         <p>
           Alle 30 Minuten entsteht ein <b>Datenstand</b> je Spot: die jeweils neuesten Läufe aller Modelle,
           die Windguru dort anbietet — hochauflösende Küstenmodelle wie HARMONIE, AROME oder ICON-D2 (1–3 km,
-          reichen etwa 2–3 Tage) und globale wie ECMWF oder GFS (9–15 km, bis 15–16 Tage). Dazu die
-          Messstationen am Spot und die gemessene Wassertemperatur von Rijkswaterstaat.
+          reichen etwa 2–3 Tage) und globale wie ECMWF oder GFS (9–15 km, bis 15–16 Tage). Jede Modell-Reihe
+          wird dabei nur einmal gespeichert, auch wenn sie in vielen Datenständen vorkommt. Dazu die
+          Messstationen am Spot (Natural High liefert 10-Minuten-Mittel und wird bei jedem Abruf für die
+          letzten Stunden nachgeholt, Mirns NKV nur mit dem jeweils aktuellen Wert) und die gemessene
+          Wassertemperatur von Rijkswaterstaat.
         </p>
         <p className="mt-2">
           Weil alle alten Datenstände aufbewahrt werden, lässt sich später für jeden beliebigen Zeitpunkt
@@ -295,6 +300,12 @@ export default function HelpPage() {
           Ein Modell mit σ = 2 kn zählt also viermal so viel wie eines mit σ = 4 kn. Weil die Güte mit dem
           Vorlauf sinkt, wird σ je Vorlauf-Stufe getrennt bestimmt.
         </p>
+        <p className="mt-2">
+          Das Gewicht gilt <b>je Stunde</b>. Ein Kurzfrist-Modell wie HARMONIE zählt morgen genauso viel wie
+          ein globales — übermorgen Abend ist seine Reichweite zu Ende, dann verteilt sich das Gewicht auf die
+          übrigen. Über 16 Tage gerechnet sähe es deshalb unwichtig aus; die Analyse zeigt darum immer den
+          Anteil im gewählten Zeitraum bzw. in der gewählten Stunde.
+        </p>
         <Item name="Ohne Historie: feiner = besser">
           Solange ein Modell kaum Stichproben hat, gilt ein Startwert aus seiner Auflösung: erwarteter Fehler
           z. B. {fmt(priorMAE(2))} kn bei 2 km, {fmt(priorMAE(9))} kn bei 9 km, {fmt(priorMAE(13))} kn bei 13 km
@@ -325,7 +336,8 @@ export default function HelpPage() {
         <p className="mt-2">
           Ein Mittel glättet Spitzen — sehen zwei Modelle die Front um 11 bzw. 15 Uhr, zeigt der Konsens einen
           flachen Buckel. Darum nennt die Tageskarte zusätzlich die <b>Modell-Spitze</b>: erst jedes Modell für
-          sich (Ø seiner 3 stärksten Tageslicht-Stunden), dann der gewichtete Median darüber.
+          sich (Ø seiner 3 stärksten Tageslicht-Stunden), dann der Median darüber, gewichtet mit den
+          Stundengewichten des Modells an diesem Tag.
         </p>
       </Section>
 
@@ -349,7 +361,10 @@ export default function HelpPage() {
         </ol>
         <p className="mt-2">
           Daraus entstehen die Kennzahlen unter Analyse → Genauigkeit: mittlerer Fehler (MAE), systematische
-          Abweichung (Bias) und die Trefferquote (höchstens {LEARN.verifTolKn} kn daneben).
+          Abweichung (Bias) und die Trefferquote (höchstens {LEARN.verifTolKn} kn daneben). Berichtet wird
+          dabei immer die Variante (und der Streuungsfaktor), die <b>zu diesem Zeitpunkt</b> gewählt gewesen
+          wäre — nicht die, die sich am Ende als beste herausstellt. Sonst würde dieselbe Rückschau erst die
+          Variante aussuchen und sie dann mit genau den Fällen loben, nach denen sie ausgesucht wurde.
         </p>
         <Item name="Welche Variante gilt?">
           Gewählt wird die <b>einfachste</b> Variante, die im Mittel über alle Vorläufe höchstens{" "}
@@ -454,7 +469,10 @@ export default function HelpPage() {
       <Section id="quellen" title="Datenquellen & Code">
         <ul className="ml-4 list-disc">
           <li>Windguru — Modellvorhersagen (frei abrufbar; privates Dashboard, nicht affiliiert)</li>
-          <li>Messstationen: Natural High (Brouwersdam, via Windguru), Mirns NKV (soarcast/NKV)</li>
+          <li>
+            Messstationen: Natural High (Brouwersdam, via Windguru, 10-min-Verlauf), Mirns NKV (soarcast/NKV,
+            nur aktueller Wert)
+          </li>
           <li>Wassertemperatur: Rijkswaterstaat (Brouwershavensche Gat, Bommenede, Friesekust IJsselmeer)</li>
         </ul>
         <p className="mt-2">

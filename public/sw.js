@@ -1,12 +1,16 @@
 /* Service Worker des Wind Cockpits.
  *
  * Zweck: am Strand mit schlechtem Netz trotzdem den letzten Datenstand zeigen.
- *  - Seiten + /api/*: erst Netz, bei Ausfall der zuletzt gespeicherte Stand. Das Dashboard
+ *  - Seiten + /api/*: erst Netz, bei Ausfall der zuletzt gespeicherte Stand. Kommt das Netz
+ *    nicht binnen NET_TIMEOUT_MS, gibt es sofort den gespeicherten Stand; die Anfrage läuft
+ *    weiter und legt ihre Antwort für das nächste Öffnen ab. Ohne diese Frist hinge die App
+ *    bei schwachem Netz, bis der Browser aufgibt (oft 30 s und mehr). Das Dashboard
  *    zeigt dessen Alter ohnehin an (und färbt es ab 45 min gelb) — alte Daten sind also
  *    als solche erkennbar.
  *  - /_next/static/* + Icons: unveränderliche Dateien, direkt aus dem Cache.
  * Neue Version ausrollen: VERSION hochzählen, dann werden alte Caches verworfen. */
 const VERSION = "v1";
+const NET_TIMEOUT_MS = 3500;
 const PAGES = `pages-${VERSION}`;
 const ASSETS = `assets-${VERSION}`;
 
@@ -47,14 +51,31 @@ async function cacheFirst(req) {
 
 async function networkFirst(req) {
   const cache = await caches.open(PAGES);
-  try {
-    const res = await fetch(req);
+  // Die Anfrage-Optionen (cache: "no-store") dürfen den Treffer nicht verhindern.
+  const cached = async () =>
+    (await cache.match(req, { ignoreVary: true })) ?? (req.mode === "navigate" ? await cache.match("/") : undefined);
+
+  const net = fetch(req).then((res) => {
     if (res.ok) cache.put(req, res.clone());
     return res;
+  });
+  // Spätes Netz-Ergebnis nicht als unbehandelten Fehler liegen lassen.
+  net.catch(() => {});
+
+  let timer;
+  const slow = new Promise((resolve) => {
+    timer = setTimeout(resolve, NET_TIMEOUT_MS);
+  });
+  try {
+    const first = await Promise.race([net, slow]);
+    if (first) return first;
+    // Netz zu langsam: gespeicherten Stand zeigen, falls es einen gibt — sonst weiter warten.
+    return (await cached()) ?? (await net);
   } catch (err) {
-    // Die Anfrage-Optionen (cache: "no-store") dürfen den Treffer nicht verhindern.
-    const hit = (await cache.match(req, { ignoreVary: true })) ?? (req.mode === "navigate" && (await cache.match("/")));
+    const hit = await cached();
     if (hit) return hit;
     throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }

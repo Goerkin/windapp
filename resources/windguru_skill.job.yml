@@ -1,11 +1,9 @@
 # Lern-Job: rechnet aus der gesammelten Historie die Modellgüte und die Nachkorrektur neu
 # (scripts/skill_job.py → Tabellen "ModelSkill"/"SpotStat").
 #
-# Warum ein eigener Job und nicht (mehr) die App: bis Version 0.1 lief das Lernen in der
-# Next.js-App (src/instrumentation.ts → src/lib/skill.ts). Ist die App gestoppt oder gelöscht,
-# wächst die Datenbasis weiter, aber Güte und Korrektur frieren ein — genau das war passiert.
-# Jetzt gehört das Lernen zur Datenbasis; die App liest nur noch das Ergebnis und ist
-# vollständig entbehrlich.
+# Warum ein eigener Job und nicht (mehr) die App: früher lief das Lernen in der Next.js-App.
+# War die App gestoppt oder gelöscht, wuchs die Datenbasis weiter, aber Güte und Korrektur
+# froren ein. Jetzt gehört das Lernen zur Datenbasis; die App liest nur noch das Ergebnis.
 #
 # Warum nicht als zweiter Task im Erfassungs-Job: andere sinnvolle Taktung (stündlich statt
 # alle 30 min), und ein Fehler beim Lernen darf die Roh-Erfassung nicht anfassen. Getrennte

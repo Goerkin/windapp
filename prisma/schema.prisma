@@ -1,15 +1,15 @@
 // Windguru Wind-Dashboard — Datenmodell.
 //
-// Alles hängt am Spot. Ein Snapshot = ein Datenabruf aller Modelle für einen Spot zu einem
-// Zeitpunkt. Die eigentlichen Zeitreihen liegen pro (Snapshot, Modell) als JSON in
-// ModelSeries — kompakt (wenige Zeilen je Poll) und aus dem Modell-Set wird im Server der
-// aggregierte Konsens sowie die Trend-Historie berechnet.
+// Alles hängt am Spot. Ein Snapshot = ein Datenabruf für einen Spot zu einem Zeitpunkt. Die
+// eigentlichen Zeitreihen liegen je Modell-Reihe genau einmal als JSON in ModelRun; welcher
+// Abruf welche Reihen sah, steht in SnapshotRun. Geschrieben wird ausschließlich von den
+// Databricks-Jobs (scripts/ingest_job.py, scripts/skill_job.py), die App liest nur.
 
 generator client {
   provider   = "prisma-client-js"
   // engineType "client" = Rust-freier Client OHNE Query-Engine-Binary (nutzt den WASM-
-  // Query-Compiler über den pg-Treiber-Adapter). Nötig für das 10-MB-pro-Datei-Limit der
-  // Databricks Apps. Siehe prisma.ts.
+  // Query-Compiler über den pg-Treiber-Adapter) — klein genug für Vercel-Funktionen; die
+  // .wasm nimmt next.config.ts ins File-Tracing auf. Siehe prisma.ts.
   engineType = "client"
 }
 
@@ -28,23 +28,23 @@ model Spot {
   lon       Float?
   sortOrder Int          @default(0)
 
-  // Laufzeit-Konfiguration für Auswertungen, die OHNE die Next.js-App laufen (der
-  // Lern-Job scripts/skill_job.py). Gespiegelt aus src/lib/spots.ts durch
-  // scripts/seed-spots.mjs — damit die Python-Seite keine eigene Spot-Tabelle braucht.
+  // Laufzeit-Konfiguration für den Lern-Job (scripts/skill_job.py). Gespiegelt aus
+  // config/spots.json durch scripts/seed-spots.mjs — damit die Python-Seite keine eigene Spot-Tabelle braucht.
   //   stations   = [{ id, name, source }]  — die AKTUELL gültigen Messstationen
   //   waterCodes = ["code", …]             — Rijkswaterstaat-Stellen, die ERSTE ist Referenz
   stations   Json?
   waterCodes Json?
 
   snapshots Snapshot[]
+  runs      ModelRun[]
   stationObs StationObs[]
   updatedAt DateTime     @updatedAt
 }
 
-// Live-Messung einer Windguru-Wetterstation, die dem Spot zugeordnet ist
-// (Brouwersdam → Natural High 521, Mirns → Hindeloopen 16217). Wird im 30-min-Poll
-// gezogen (q=station_data_current) und gegen die Prognose gelegt. Werte in Knoten / °C.
-// Eindeutig je (Spot, Messzeitpunkt) — derselbe Messwert wird nicht doppelt gespeichert.
+// Messung einer Wetterstation am Spot (config/spots.json → stations). Windguru-Stationen
+// liefern 10-min-Mittel; der Erfassungs-Job holt bei jedem Lauf die letzten Stunden nach, so
+// füllen sich Lücken durch ausgefallene Läufe von selbst. soarcast (Mirns NKV) kennt keinen
+// Verlauf — dort nur der jeweils aktuelle Wert. Werte in Knoten / °C.
 model StationObs {
   id        String   @id @default(cuid())
   spotId    Int
@@ -59,8 +59,7 @@ model StationObs {
   windDir   Float? // Grad
   temp      Float? // °C
 
-  // Ein Spot kann mehrere Messstationen haben (z. B. Mirns: Hindeloopen + Mirns NKV) —
-  // je Station und Messzeitpunkt genau eine Zeile.
+  // Ein Spot kann mehrere Messstationen haben — je Station und Messzeitpunkt genau eine Zeile.
   @@unique([spotId, stationId, obsTime])
   @@index([spotId, obsTime])
 }
@@ -83,27 +82,68 @@ model Snapshot {
   // Windguru-Blend-Konfiguration (model_koef, mix_range, Sensitivitäten) als JSON.
   blend     Json?
 
-  models    ModelSeries[]
+  runs      SnapshotRun[]
+  models    ModelSeries[] // ALT, s. u.
 
   @@index([spotId, fetchedAt])
 }
 
-// Zeitreihe genau eines Wettermodells innerhalb eines Snapshots.
-model ModelSeries {
+// Eine Modell-Zeitreihe, GENAU EINMAL gespeichert. Windguru setzt eine Reihe oft aus mehreren
+// Läufen zusammen (ECMWF: 18z für 0–144 h + 12z für 156–360 h); `rundef` beschreibt diese
+// Zusammensetzung und ist deshalb der Schlüssel für „dieselbe Reihe". Früher stand jede Reihe
+// in jedem 30-min-Abruf erneut (≈ 7× dieselben Daten); jetzt verweist der Abruf per SnapshotRun
+// auf sie. Der Erfassungs-Job lädt eine bekannte `rundef` gar nicht erst neu herunter.
+model ModelRun {
   id            String   @id @default(cuid())
-  snapshotId    String
-  snapshot      Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
-
+  spotId        Int
+  spot          Spot     @relation(fields: [spotId], references: [id], onDelete: Cascade)
   idModel       Int
+  // Windguru-Laufbeschreibung, z. B. "2026092418x0x144x0x144-2026092412x0x360x156x360".
+  // Aus der alten Tabelle übernommene Reihen tragen "legacy:<md5 der Reihe>".
+  rundef        String
   modelName     String
   modelLongname String?
   resolution    Float? // km — kleiner = höher aufgelöst = relevanter für lokale Küste
-  koef          Float    @default(1) // Gewicht im Windguru-Blend
-  initStamp     Int // Unix-Sekunden des Modell-Laufs (init)
+  initStamp     Int // Unix-Sekunden des jüngsten beteiligten Laufs (init)
 
   // Zeitreihe als JSON:
   // { times:[unix], WINDSPD:[kn], GUST:[kn], WINDDIR:[deg], TMP:[°C], TMPE:[°C],
   //   TCDC/HCDC/MCDC/LCDC:[%], APCP1:[mm], RH:[%], SLP:[hPa] }
+  series        Json
+  firstSeen     DateTime @default(now())
+
+  snapshots     SnapshotRun[]
+
+  @@unique([spotId, idModel, rundef])
+  @@index([spotId, idModel, initStamp])
+}
+
+// Welche Modell-Reihen ein Abruf gesehen hat (n:m). `koef` = Gewicht im Windguru-Blend zum
+// Abrufzeitpunkt (gehört zum Abruf, nicht zur Reihe).
+model SnapshotRun {
+  snapshotId String
+  snapshot   Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  runId      String
+  run        ModelRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  koef       Float    @default(1)
+
+  @@id([snapshotId, runId])
+  @@index([runId])
+}
+
+// ALT — bis zur Umstellung aller Leser/Schreiber noch vorhanden, danach per
+// `node scripts/migrate-runs.mjs --drop-legacy` gelöscht (siehe DATABRICKS.md). Nicht mehr
+// beschreiben oder lesen.
+model ModelSeries {
+  id            String   @id @default(cuid())
+  snapshotId    String
+  snapshot      Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  idModel       Int
+  modelName     String
+  modelLongname String?
+  resolution    Float?
+  koef          Float    @default(1)
+  initStamp     Int
   series        Json
 
   @@index([snapshotId])
@@ -111,9 +151,7 @@ model ModelSeries {
 }
 
 // Materialisierte Modell-Güte je Spot × Modell: recency-gewichteter Vergleich der
-// Modellvorhersage gegen die tatsächliche Messung (Natural High / Mirns NKV). Wird im
-// Hintergrund berechnet (App-Start, nach jedem Abruf, Poller-Intervall) — NICHT im
-// Request-Pfad. Der eigene Konsens gewichtet die Modelle nach `score` (siehe skill.ts).
+// Modellvorhersage gegen die Messung. Geschrieben vom Lern-Job (scripts/skill_job.py).
 model ModelSkill {
   id         String   @id @default(cuid())
   spotId     Int
@@ -130,7 +168,7 @@ model ModelSkill {
   @@index([spotId])
 }
 
-// Materialisierte Ergebnisse je Spot, im Hintergrund erneuert (skill.ts):
+// Materialisierte Ergebnisse je Spot, stündlich erneuert vom Lern-Job (scripts/skill_job.py):
 //  - verification: rollierende, ehrliche Verifikation (Varianten, Brier, Nowcast-Nachlauf)
 //  - params: gelerntes Nachkorrektur-Modell (calib.ts SpotParams) — speist den Konsens
 model SpotStat {
@@ -140,8 +178,8 @@ model SpotStat {
   updatedAt    DateTime @updatedAt
 }
 
-// Gemessene Wassertemperatur (Rijkswaterstaat, DDAPI20) je Messstelle. Wird von der App
-// alle 6 h abgerufen (neuester Wert je Stelle; mehrere Sensoren gemittelt). Speist die
+// Gemessene Wassertemperatur (Rijkswaterstaat, DDAPI20) je Messstelle. Vom Erfassungs-Job
+// bei jedem Lauf abgerufen (neuester Wert je Stelle; mehrere Sensoren gemittelt). Speist die
 // Anzeige und den Schichtungs-Term (Wasser − Luft) der Nachkorrektur.
 model WaterTemp {
   id        String   @id @default(cuid())

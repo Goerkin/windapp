@@ -12,7 +12,11 @@ export type ModelView = {
   resolution: number | null;
   koef: number;
   initStamp: number;
-  weight: number; // Anteil am Konsens (0..1, normiert)
+  // Anteil am Konsens über das GANZE Raster (16 Tage). Nur für Sortierung/Rückfälle —
+  // NICHT als „Wichtigkeit" anzeigen: ein Kurzfrist-Modell deckt nur 1–3 Tage ab und sähe
+  // damit immer unwichtig aus. Die ehrliche Größe ist das Stundengewicht `wh`.
+  weight: number;
+  coverEnd: number | null; // letzte Stunde (Unix-Sek.), die das Modell abdeckt
   mae: number | null; // recency-gewichteter MAE ggü. Messung (kn), sofern bewertet
   bias: number | null; // recency-gewichteter Bias, Prognose − Messung (kn)
   samples: number; // effektive Stichprobenzahl der Bewertung
@@ -58,8 +62,33 @@ export type SkillView = {
   mae: number | null;
   bias: number | null;
   samples: number;
-  weight: number; // normierter Konsens-Anteil (0..1)
+  weight: number; // normierter Konsens-Anteil über das ganze Raster (s. ModelView.weight)
+  // Gewicht je Stunde, wenn alle Modelle die Stunde abdecken (Vorlauf 0–24 h), normiert (0..1).
+  hourShare: number;
   maeCorr: number | null; // typischer Restfehler nach Korrektur (Vorlauf 0–24 h, ≈ 0.8 σ)
+};
+
+/**
+ * Was der Lern-Job je Modell und Vorlauf-Stufe gelernt hat — in lesbarer Form: der Versatz,
+ * der von der Rohprognose abgezogen wird (je Windrichtungs-Quadrant N/O/S/W), dazu die
+ * windstärke- und temperaturabhängigen Terme der aktiven Variante und der Restfehler σ.
+ */
+export type LearnedModel = {
+  idModel: number;
+  label: string;
+  category: string;
+  resolution: number | null;
+  n: number[]; // effektive Stichprobe je Vorlauf-Stufe
+  sigma: number[]; // Restfehler je Stufe (kn, vor sigmaScale)
+  shift: number[][]; // [Stufe][N,O,S,W]: abgezogener Versatz bei 12 kn und ΔT = 0 (kn)
+  slope: number[] | null; // je Stufe: zusätzlicher Versatz je kn über 12 kn (nur lin/linT)
+  temp: number[] | null; // je Stufe: zusätzlicher Versatz je °C (Wasser − Luft) (nur linT)
+};
+export type LearnedView = {
+  mode: string; // raw | add | lin | linT
+  leadLabels: string[];
+  maxCorrKn: number; // Kappung der Korrektur je Stunde
+  models: LearnedModel[];
 };
 
 export type TrendRun = { fetchedAt: string; wind: (number | null)[] };
@@ -132,6 +161,7 @@ export type SpotPayload = {
   pastForecast: PastForecast | null;
   stations: StationView[];
   verification: Verification | null;
+  learned: LearnedView | null;
   empty?: boolean;
 };
 
@@ -191,6 +221,10 @@ export type Verification = {
   // Punktwolke Prognose (x) vs. Messung (y) für den Kern-Vorlauf, gekappt.
   scatter: { forecast: number; measured: number; leadH: number }[];
   outOfSample?: boolean; // nur mit Daten VOR dem jeweiligen Prognosezeitpunkt gelernt
+  // Variante und Streuungsfaktor je Stichtag nur aus früheren Vergleichen gewählt — leads,
+  // scatter und prob zeigen, was das System damals geliefert hätte (ohne Auswahl-Schönung).
+  prequential?: boolean;
+  switches?: number; // wie oft die gewählte Variante im Prüfzeitraum gewechselt hat
   snapshots?: number; // Anzahl geprüfter Prognosezeitpunkte
   chosen?: string; // gewählte Variante
   variants?: VariantScore[];

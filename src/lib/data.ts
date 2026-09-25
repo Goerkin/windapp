@@ -4,7 +4,7 @@ import { ensureHostResolved } from "./lakebase";
 import { buildConsensus, modelHourly, modelOnGrid, type SeriesInput, type ConsensusPoint } from "./consensus";
 import { loadSkillRows } from "./skill";
 import { loadWaterTemps } from "./watertemp";
-import { variantOf, type SpotParams } from "./calib";
+import { variantOf, priorSigma, LEAD_LABELS, LEAD_BUCKETS, MAX_CORR_KN, type SpotParams, type Variant } from "./calib";
 import { modelInfo, SPOTS, spotStationIds } from "./spots";
 import { topKMean } from "./units";
 import { sunTimes, isDaylight } from "./sun";
@@ -20,6 +20,7 @@ import type {
   ModelVerification,
   Nowcast,
   PastForecast,
+  LearnedView,
 } from "./types";
 
 // Zeitfenster der Live-Messungen, das gegen die Prognose gelegt wird.
@@ -87,6 +88,12 @@ type DbModel = {
   initStamp: number;
   series: unknown;
 };
+
+// Die Reihen eines Abrufs: jede Modell-Reihe liegt einmal in ModelRun, der Abruf verweist
+// über SnapshotRun darauf (samt Windguru-Blend-Gewicht `koef` zum Abrufzeitpunkt).
+const WITH_RUNS = { runs: { include: { run: true } } } as const;
+type SnapRuns = { runs: { koef: number; run: Omit<DbModel, "koef"> }[] };
+const modelsOf = (snap: SnapRuns): DbModel[] => snap.runs.map((x) => ({ ...x.run, koef: x.koef }));
 
 function toSeriesInput(m: DbModel): SeriesInput {
   return {
@@ -217,9 +224,9 @@ async function buildSpotPayload(spot: {
 }): Promise<SpotPayload> {
   // Letzter Snapshot + Modelle.
   const latest = await prisma.snapshot.findFirst({
-    where: { spotId: spot.id, ok: true },
+    where: { spotId: spot.id, ok: true, runs: { some: {} } },
     orderBy: { fetchedAt: "desc" },
-    include: { models: true },
+    include: WITH_RUNS,
   });
 
   // Materialisierte Güte + Verifikation lesen (im Hintergrund berechnet, s. skill.ts) —
@@ -269,13 +276,15 @@ async function buildSpotPayload(spot: {
     pastForecast: null,
     stations,
     verification,
+    learned: learnedView(params, variant),
     empty: true,
   };
 
-  if (!latest || latest.models.length === 0) return base;
+  const latestModels = latest ? modelsOf(latest) : [];
+  if (!latest || latestModels.length === 0) return base;
 
   const nowSec = Date.now() / 1000;
-  const inputs = latest.models.map(toSeriesInput);
+  const inputs = latestModels.map(toSeriesInput);
   // Gemessen (Referenz-Messstelle) vor Windguru-Schätzung.
   const waterTemp = water[0]?.value ?? latest.waterTemp;
   const consensus = buildConsensus(inputs, nowSec, params, { waterTemp });
@@ -285,9 +294,13 @@ async function buildSpotPayload(spot: {
   const weightMap = new Map(consensus.contributors.map((c) => [c.idModel, c.weight]));
   const hourly = (m: DbModel) => {
     const h = modelHourly(toSeriesInput(m), gridTimes, params, { waterTemp });
-    return { wind: h.wind, windAdj: h.windAdj, sigma: h.sigma, wh: h.w };
+    let last = -1;
+    h.wind.forEach((v, i) => {
+      if (v != null) last = i;
+    });
+    return { wind: h.wind, windAdj: h.windAdj, sigma: h.sigma, wh: h.w, coverEnd: last >= 0 ? gridTimes[last] : null };
   };
-  const models: ModelView[] = latest.models
+  const models: ModelView[] = latestModels
     .map((m) => {
       const info = modelInfo(m.idModel, m.resolution);
       const sk = skillById.get(m.idModel);
@@ -307,8 +320,15 @@ async function buildSpotPayload(spot: {
         ...hourly(m),
       };
     })
-    // Bestes zuerst: nach Konsens-Gewicht (= Güte × Aktualität), dann Auflösung.
-    .sort((a, b) => b.weight - a.weight || (a.resolution ?? 99) - (b.resolution ?? 99));
+    // Wichtigstes zuerst: nach dem Gewicht in den nächsten 48 h — NICHT nach dem Anteil über
+    // das ganze 16-Tage-Raster, bei dem Kurzfrist-Modelle (HARMONIE, ICON-D2 …) nur wegen
+    // ihrer kurzen Reichweite hinten landeten.
+    .sort((a, b) => sumWh(b.wh, 48) - sumWh(a.wh, 48) || b.weight - a.weight || (a.resolution ?? 99) - (b.resolution ?? 99));
+
+  // Gewicht je Stunde (Vorlauf 0–24 h), wenn alle Modelle die Stunde abdecken — das ist die
+  // Größe, die im Konsens tatsächlich wirkt.
+  const hourW = new Map(skillRows.map((r) => [r.idModel, hourWeight(params, variant, r.idModel, r.resolution)]));
+  const hourWSum = [...hourW.values()].reduce((a, b) => a + b, 0) || 1;
 
   // Güte-Ranking für die „Genauigkeit"-Ansicht (alle bewerteten Modelle, bestes zuerst).
   const skill: SkillView[] = skillRows
@@ -324,11 +344,12 @@ async function buildSpotPayload(spot: {
       bias: r.bias,
       samples: r.samples,
       weight: weightMap.get(r.idModel) ?? 0,
+      hourShare: (hourW.get(r.idModel) ?? 0) / hourWSum,
       maeCorr: params?.models[String(r.idModel)]
         ? round1(0.8 * params.models[String(r.idModel)].fits[0][variant.mode].sigma)
         : null,
     }))
-    .sort((a, b) => b.weight - a.weight || (a.mae ?? 99) - (b.mae ?? 99));
+    .sort((a, b) => b.hourShare - a.hourShare || (a.mae ?? 99) - (b.mae ?? 99));
 
   // Frühere Datenstände: erst nur Zeitstempel (bis 8 Tage zurück), daraus die benötigten
   // Stände wählen und nur deren Modelle laden. (Bei 30-min-Takt reichen „die letzten N"
@@ -337,6 +358,7 @@ async function buildSpotPayload(spot: {
     where: {
       spotId: spot.id,
       ok: true,
+      runs: { some: {} },
       fetchedAt: { lt: latest.fetchedAt, gte: new Date(Date.now() - 8 * 86400e3) },
     },
     orderBy: { fetchedAt: "desc" },
@@ -351,13 +373,13 @@ async function buildSpotPayload(spot: {
   const pastMeta = pickAround(histMeta, PAST_FORECAST_H);
   const needIds = [...new Set([...pickedMeta, ...cadMeta, pastMeta].filter(Boolean).map((m) => m!.id))];
   const histSnaps = needIds.length
-    ? await prisma.snapshot.findMany({ where: { id: { in: needIds } }, include: { models: true } })
+    ? await prisma.snapshot.findMany({ where: { id: { in: needIds } }, include: WITH_RUNS })
     : [];
   const snapById = new Map(histSnaps.map((h) => [h.id, h]));
   const picked = pickedMeta.map((m) => snapById.get(m.id)!).filter(Boolean);
 
   const runs: TrendRun[] = picked.map((snap) => {
-    const c = buildConsensus(snap.models.map(toSeriesInput), nowSec, params, { waterTemp: water[0]?.value ?? snap.waterTemp });
+    const c = buildConsensus(modelsOf(snap).map(toSeriesInput), nowSec, params, { waterTemp: water[0]?.value ?? snap.waterTemp });
     const byTime = new Map(c.points.map((p) => [p.t, p.windspd]));
     return {
       fetchedAt: snap.fetchedAt.toISOString(),
@@ -377,7 +399,7 @@ async function buildSpotPayload(spot: {
     return {
       ...c,
       peaks: ref
-        ? dailyPeaks(buildConsensus(ref.models.map(toSeriesInput), nowSec, params, { waterTemp: water[0]?.value ?? ref.waterTemp }).points, lat, lon)
+        ? dailyPeaks(buildConsensus(modelsOf(ref).map(toSeriesInput), nowSec, params, { waterTemp: water[0]?.value ?? ref.waterTemp }).points, lat, lon)
         : null,
     };
   });
@@ -431,13 +453,50 @@ async function buildSpotPayload(spot: {
   };
 }
 
+const sumWh = (wh: (number | null)[], n: number) => wh.slice(0, n).reduce<number>((a, w) => a + (w ?? 0), 0);
+
+/** Konsens-Gewicht eines Modells je Stunde bei Vorlauf 0–24 h (wie modelHour in calib.ts). */
+function hourWeight(params: SpotParams | null, variant: Variant, idModel: number, res: number | null): number {
+  if (variant.weights === "equal") return 1;
+  const fit = params?.models[String(idModel)]?.fits[0]?.[variant.mode];
+  const sigma = Math.max(0.8, fit?.sigma ?? priorSigma(res, 0));
+  return 1 / (sigma * sigma);
+}
+
+/** Gelerntes Nachkorrektur-Modell in lesbarer Form (je Modell × Vorlauf-Stufe). */
+function learnedView(params: SpotParams | null, variant: Variant): LearnedView | null {
+  if (!params?.models) return null;
+  const mode = variant.mode;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const models = Object.entries(params.models).map(([id, m]) => {
+    const idModel = Number(id);
+    const info = modelInfo(idModel, m.resolution);
+    const fits = Array.from({ length: LEAD_BUCKETS }, (_, b) => m.fits[b]?.[mode]);
+    const beta = (b: number, k: number) => fits[b]?.beta[k] ?? 0;
+    return {
+      idModel,
+      label: info.label,
+      category: info.category,
+      resolution: m.resolution,
+      n: Array.from({ length: LEAD_BUCKETS }, (_, b) => m.n[b] ?? 0),
+      sigma: fits.map((f, b) => r2(f?.sigma ?? priorSigma(m.resolution, b))),
+      // Merkmale wie features() in calib.ts: 0 = Achsenabschnitt, 1–4 = Quadrant N/O/S/W.
+      shift: fits.map((_, b) => [0, 1, 2, 3].map((q) => (mode === "raw" ? 0 : r2(beta(b, 0) + beta(b, 1 + q))))),
+      slope: mode === "lin" || mode === "linT" ? fits.map((_, b) => r2(beta(b, 5))) : null,
+      temp: mode === "linT" ? fits.map((_, b) => r2(beta(b, 6))) : null,
+    };
+  });
+  models.sort((a, b) => a.sigma[0] - b.sigma[0]);
+  return { mode, leadLabels: LEAD_LABELS, maxCorrKn: MAX_CORR_KN, models };
+}
+
 /**
  * Konsens eines früheren Datenstands auf dem Gitter „ab seinem Abrufzeitpunkt bis Ende der
  * aktuellen Prognose", plus seine Abweichung von der Messung in den bereits vergangenen
  * Stunden (Stundenmittel der ersten Station mit Daten).
  */
 function buildPastForecast(
-  snap: { fetchedAt: Date; models: DbModel[] },
+  snap: { fetchedAt: Date } & SnapRuns,
   stations: StationView[],
   gridTimes: number[],
   params: SpotParams | null,
@@ -448,7 +507,7 @@ function buildPastForecast(
   const end = gridTimes.at(-1) ?? start;
   const grid: number[] = [];
   for (let t = start; t <= end; t += 3600) grid.push(t);
-  const c = buildConsensus(snap.models.map(toSeriesInput), F, params, { grid, waterTemp });
+  const c = buildConsensus(modelsOf(snap).map(toSeriesInput), F, params, { grid, waterTemp });
   if (!c.points.length) return null;
 
   const st = stations.find((x) => x.series.length);
@@ -597,19 +656,20 @@ async function buildModelVerification(
   const dayStart = new Date(gridTimes[0] * 1000);
   const ref =
     (await prisma.snapshot.findFirst({
-      where: { spotId, ok: true, fetchedAt: { lte: dayStart } },
+      where: { spotId, ok: true, runs: { some: {} }, fetchedAt: { lte: dayStart } },
       orderBy: { fetchedAt: "desc" },
-      include: { models: true },
+      include: WITH_RUNS,
     })) ??
     (await prisma.snapshot.findFirst({
-      where: { spotId, ok: true },
+      where: { spotId, ok: true, runs: { some: {} } },
       orderBy: { fetchedAt: "asc" },
-      include: { models: true },
+      include: WITH_RUNS,
     }));
-  if (!ref || ref.models.length === 0) return empty;
+  const refModels = ref ? modelsOf(ref) : [];
+  if (!ref || refModels.length === 0) return empty;
 
   const cons = buildConsensus(
-    ref.models.map(toSeriesInput),
+    refModels.map(toSeriesInput),
     Math.floor(ref.fetchedAt.getTime() / 1000),
     params,
     { waterTemp: ref.waterTemp },
@@ -618,7 +678,7 @@ async function buildModelVerification(
   const consensus = gridTimes.map((t) => consMap.get(t) ?? null);
   const weightMap = new Map(cons.contributors.map((c) => [c.idModel, c.weight]));
 
-  const models = ref.models
+  const models = refModels
     .map((m) => {
       const info = modelInfo(m.idModel, m.resolution);
       const wind = modelOnGrid(toSeriesInput(m), gridTimes);
@@ -654,10 +714,37 @@ export async function loadModelVerification(
   return buildModelVerification(spotId, day);
 }
 
+// Die Ansicht ändert sich nur mit einem neuen Abruf, Lernlauf oder Messwert (alle ≥ 30 min)
+// — also nicht bei jedem Aufruf alle Konsense neu rechnen. Der Schlüssel fasst die jüngsten
+// Zeitstempel der Jobs und die aktuelle Stunde zusammen (das Raster beginnt „jetzt"); die
+// Höchstdauer hält Altersangaben („vor N min") frisch. Je Server-Instanz, bewusst schlicht.
+const VIEW_TTL_MS = 10 * 60 * 1000;
+let viewCache: { key: string; at: number; data: Promise<SpotPayload[]> } | null = null;
+
+async function viewKey(): Promise<string> {
+  const [snap, stat, obs, water] = await Promise.all([
+    prisma.snapshot.aggregate({ _max: { fetchedAt: true } }),
+    prisma.spotStat.aggregate({ _max: { updatedAt: true } }),
+    prisma.stationObs.aggregate({ _max: { obsTime: true } }),
+    prisma.waterTemp.aggregate({ _max: { obsTime: true } }),
+  ]);
+  const t = (d: Date | null | undefined) => d?.getTime() ?? 0;
+  return [t(snap._max.fetchedAt), t(stat._max.updatedAt), t(obs._max.obsTime), t(water._max.obsTime), hourTs(Date.now() / 1000)].join("|");
+}
+
 export async function loadDashboard(): Promise<SpotPayload[]> {
   await ensureHostResolved();
-  const spots = await prisma.spot.findMany({ orderBy: { sortOrder: "asc" } });
-  return Promise.all(spots.map(buildSpotPayload));
+  const key = await viewKey();
+  if (viewCache && viewCache.key === key && Date.now() - viewCache.at < VIEW_TTL_MS) return viewCache.data;
+  const data = prisma.spot
+    .findMany({ orderBy: { sortOrder: "asc" } })
+    .then((spots) => Promise.all(spots.map(buildSpotPayload)));
+  viewCache = { key, at: Date.now(), data };
+  // Ein Fehler darf nicht für die ganze Höchstdauer hängen bleiben.
+  data.catch(() => {
+    if (viewCache?.data === data) viewCache = null;
+  });
+  return data;
 }
 
 export async function loadStatus() {

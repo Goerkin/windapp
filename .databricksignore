@@ -1,19 +1,16 @@
-# Was NICHT mit ins Deployment wandert. Databricks Apps: begrenzte Startzeit und
-# Dateigröße — nur der Standalone-Build (node run-app.mjs) wird gebraucht, nicht der
-# Quellcode oder das große Root-node_modules.
-#
-# WICHTIG: `.next/standalone/node_modules` MUSS mit — deshalb nur das ROOT-node_modules
-# ausschließen (führender Slash ankert an die Wurzel).
+# Was NICHT mit ins Bundle wandert. Die Jobs brauchen nur scripts/ und config/ — die
+# Oberfläche (src/, public/) läuft auf Vercel, nicht auf Databricks.
 /node_modules/
-
 .git/
-.next/cache/
+.next/
 src/
+public/
+tests/
 prisma/migrations/
 .vscode/
 .idea/
 
-# Env/Secrets gehören nie ins Bundle — die App bekommt Zugänge über die Ressourcen.
+# Env/Secrets gehören nie ins Bundle.
 .env
 .env.*
 !.env.example

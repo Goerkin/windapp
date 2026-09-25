@@ -4,6 +4,7 @@ import { type WindUnit } from "@/lib/units";
 import VerificationPanel from "./VerificationPanel";
 import ModelVerifyPanel from "./ModelVerifyPanel";
 import MethodPanel from "./MethodPanel";
+import LearnedPanel from "./LearnedPanel";
 
 // Kategorie-Farben (identisch zu ModelPanel).
 const CAT_COLOR: Record<string, string> = {
@@ -35,7 +36,7 @@ export default function AccuracyPanel({ spot, unit }: { spot: SpotPayload; unit:
   const skill = spot.skill ?? [];
   const scored = skill.filter((s) => s.mae != null);
   const fmt = (kn: number | null | undefined, d = U.d) => (kn == null ? "–" : U.f(kn).toFixed(d));
-  const maxWeight = Math.max(0.0001, ...skill.map((s) => s.weight));
+  const maxShare = Math.max(0.0001, ...skill.map((s) => s.hourShare));
 
   return (
     <div className="space-y-8">
@@ -66,7 +67,9 @@ export default function AccuracyPanel({ spot, unit }: { spot: SpotPayload; unit:
                   <th className="py-1.5 pr-3 font-600">Ø Fehler roh ({U.label})</th>
                   <th className="py-1.5 pr-3 font-600">nach Korrektur</th>
                   <th className="py-1.5 pr-3 font-600">Bias roh ({U.label})</th>
-                  <th className="py-1.5 pr-3 font-600">Konsens-Anteil</th>
+                  <th className="py-1.5 pr-3 font-600" title="Gewicht in einer Stunde, die alle Modelle abdecken (Vorlauf 0–24 h)">
+                    Gewicht je Stunde
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -99,11 +102,11 @@ export default function AccuracyPanel({ spot, unit }: { spot: SpotPayload; unit:
                           <div className="h-1.5 w-20 overflow-hidden rounded-full bg-[color:var(--color-bg-2)]">
                             <div
                               className="h-full rounded-full"
-                              style={{ width: `${(s.weight / maxWeight) * 100}%`, background: color }}
+                              style={{ width: `${(s.hourShare / maxShare) * 100}%`, background: color }}
                             />
                           </div>
                           <span className="font-mono text-[11px] text-muted">
-                            {(s.weight * 100).toFixed(0)} %
+                            {(s.hourShare * 100).toFixed(0)} %
                           </span>
                         </div>
                       </td>
@@ -114,10 +117,18 @@ export default function AccuracyPanel({ spot, unit }: { spot: SpotPayload; unit:
             </table>
             <p className="mt-2 text-[11px] text-faint">
               „Prior" = noch zu wenig Messhistorie, das Modell wird vorerst nach Auflösung
-              gewichtet. Bias &gt; 0 = Modell prognostiziert tendenziell zu viel Wind.
+              gewichtet. Bias &gt; 0 = Modell prognostiziert tendenziell zu viel Wind. „Gewicht je
+              Stunde" gilt, solange alle Modelle die Stunde abdecken; Kurzfrist-Modelle reichen nur
+              1–3 Tage weit, danach verteilt sich ihr Gewicht auf die übrigen.
             </p>
           </div>
         )}
+      </section>
+
+      {/* ── Gelernte Korrekturen je Modell, Vorlauf und Richtung ───────────────────────── */}
+      <section>
+        <div className="mb-3 text-xs uppercase tracking-wider text-muted">Was hat das Lernen herausgefunden?</div>
+        <LearnedPanel spot={spot} unit={unit} />
       </section>
 
       {/* ── Verfahren: Varianten, Kalibrierung, Nowcast ────────────────────────────────── */}

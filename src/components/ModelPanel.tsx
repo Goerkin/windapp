@@ -13,7 +13,8 @@ import {
 import type { SpotPayload } from "@/lib/types";
 import { convertWind, unitLabel, type WindUnit } from "@/lib/units";
 import { PALETTE, MODEL_COLORS } from "@/lib/palette";
-import { fmtTime, dayKeyOf, windBands } from "./ui";
+import { fmtTime, dayKeyOf, hourOf, windBands } from "./ui";
+import HourBreakdown from "./HourBreakdown";
 
 const TZ = "Europe/Amsterdam";
 
@@ -41,6 +42,8 @@ function pick(m: { wind: (number | null)[]; windAdj?: (number | null)[] }, i: nu
   return view === "raw" ? m.wind[i] : m.windAdj?.[i] ?? m.wind[i];
 }
 
+const reachFmt = new Intl.DateTimeFormat("de-DE", { timeZone: TZ, weekday: "short", hour: "2-digit", minute: "2-digit" });
+
 export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: WindUnit }) {
   const [count, setCount] = useState(6);
   const [view, setView] = useState<View>("adj");
@@ -50,7 +53,28 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
   // Isolierte Modelle: leere Auswahl = alle zeigen; sonst nur die gewählten (+ Konsens).
   // In einem Set gehalten; per Klick auf die Legende umgeschaltet.
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const topModels = spot.models.slice(0, count);
+  // Aufgeschlüsselte Stunde (Index im Konsens-Raster); null = automatisch.
+  const [hourPick, setHourPick] = useState<number | null>(null);
+
+  // Gezeigter Zeitraum als Raster-Indizes.
+  const idx = useMemo(() => {
+    const end = Date.now() / 1000 + 72 * 3600;
+    return spot.gridTimes
+      .map((t, i) => ({ t, i }))
+      .filter((x) => (dayFilter ? dayKeyOf(x.t) === dayFilter : x.t <= end));
+  }, [spot.gridTimes, dayFilter]);
+
+  // Anteil jedes Modells am Konsens IM GEZEIGTEN ZEITRAUM (Summe seiner Stundengewichte).
+  // Danach wird sortiert: ein Kurzfrist-Modell ist für morgen wichtig, auch wenn es über
+  // 16 Tage gerechnet kaum vorkommt.
+  const ranked = useMemo(() => {
+    const sums = spot.models.map((m) => idx.reduce((a, { i }) => a + (m.wh?.[i] ?? 0), 0));
+    const total = sums.reduce((a, b) => a + b, 0) || 1;
+    return spot.models
+      .map((m, k) => ({ m, share: sums[k] / total }))
+      .sort((a, b) => b.share - a.share || b.m.weight - a.m.weight);
+  }, [spot.models, idx]);
+  const topModels = ranked.slice(0, count).map((r) => r.m);
 
   // Nur Auswahl berücksichtigen, die auch im aktuellen Top-N-Pool liegt.
   const topIds = new Set(topModels.map((m) => m.idModel));
@@ -67,12 +91,6 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
     });
 
   const { data, midnights } = useMemo(() => {
-    const now = Date.now() / 1000;
-    const end = now + 72 * 3600;
-    const idx = spot.gridTimes
-      .map((t, i) => ({ t, i }))
-      .filter((x) => (dayFilter ? dayKeyOf(x.t) === dayFilter : x.t <= end));
-
     const data = idx.map(({ t, i }) => {
       const row: Record<string, number | null> = { t };
       const cp = spot.points[i];
@@ -110,19 +128,29 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
       }
     }
     return { data, midnights };
-  }, [spot.gridTimes, spot.points, spot.models, topModels, unit, dayFilter, view]);
+  }, [idx, spot.points, spot.models, topModels, unit, view]);
 
   const nowSec = Date.now() / 1000;
+  // Ohne Auswahl: die erste Stunde ab jetzt im Zeitraum, beim Einzeltag 14 Uhr.
+  const autoHour =
+    (dayFilter
+      ? idx.find(({ t }) => hourOf(t) === 14)
+      : idx.find(({ t }) => t >= nowSec - 3600)) ?? idx[0];
+  const hourIdx = hourPick ?? autoHour?.i ?? null;
+  const pickDay = (d: string | null) => {
+    setDayFilter(d);
+    setHourPick(null);
+  };
 
   return (
     <div>
       {/* Tages-Navigation: „3 Tage" am Stück oder ein einzelner Tag im Fokus. */}
       <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
-        <DayBtn active={dayFilter === null} onClick={() => setDayFilter(null)}>
+        <DayBtn active={dayFilter === null} onClick={() => pickDay(null)}>
           3 Tage
         </DayBtn>
         {days.map((d) => (
-          <DayBtn key={d.day} active={dayFilter === d.day} onClick={() => setDayFilter(d.day)}>
+          <DayBtn key={d.day} active={dayFilter === d.day} onClick={() => pickDay(d.day)}>
             {d.label}
           </DayBtn>
         ))}
@@ -158,6 +186,9 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
                 Top {c}
               </button>
             ))}
+            <button data-active={count >= spot.models.length} onClick={() => setCount(spot.models.length)}>
+              Alle
+            </button>
           </div>
         </div>
       </div>
@@ -171,7 +202,15 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
       </p>
 
       <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 22, right: 6, bottom: 4, left: -18 }}>
+        <LineChart
+          data={data}
+          margin={{ top: 22, right: 6, bottom: 4, left: -18 }}
+          onClick={(st) => {
+            const k = Number(st?.activeTooltipIndex);
+            if (Number.isInteger(k) && idx[k]) setHourPick(idx[k].i);
+          }}
+          style={{ cursor: "pointer" }}
+        >
           <CartesianGrid stroke={PALETTE.gridLine} strokeDasharray="2 4" vertical={false} />
           {windBands(unit)}
           <XAxis
@@ -210,6 +249,9 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
               />
             ))}
           <ReferenceLine x={nowSec} stroke="#22d3ee" strokeOpacity={0.6} />
+          {hourIdx != null && spot.gridTimes[hourIdx] != null && (
+            <ReferenceLine x={spot.gridTimes[hourIdx]} className="ref-chrome" stroke={PALETTE.axis} strokeOpacity={0.7} strokeDasharray="2 2" />
+          )}
           {topModels.map((m, i) =>
             isShown(m.idModel) ? (
               <Line
@@ -315,13 +357,29 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
         )}
       </div>
 
-      {/* Modell-Erklärungen + Gewichte */}
-      <div className="mt-5">
-        <div className="mb-2 text-xs uppercase tracking-wider text-muted">
-          Relevanteste Modelle für diesen Spot
+      {/* Aufschlüsselung einer Stunde: woraus der Konsens besteht */}
+      {hourIdx != null && (
+        <div className="mt-5 rounded-xl border border-border p-3">
+          <HourBreakdown
+            spot={spot}
+            index={hourIdx}
+            unit={unit}
+            onStep={(d) => setHourPick(Math.max(0, Math.min(spot.gridTimes.length - 1, hourIdx + d)))}
+          />
         </div>
+      )}
+
+      {/* Modell-Erklärungen + Anteile im gezeigten Zeitraum */}
+      <div className="mt-5">
+        <div className="mb-1 text-xs uppercase tracking-wider text-muted">
+          Modelle im gezeigten Zeitraum
+        </div>
+        <p className="mb-2 text-[11px] text-faint">
+          Anteil = wie stark das Modell in die Stunden dieses Zeitraums eingeht. Kurzfrist-Modelle
+          reichen nur 1–3 Tage weit; danach tragen allein die globalen Modelle den Konsens.
+        </p>
         <div className="space-y-2">
-          {spot.models.slice(0, count).map((m) => (
+          {ranked.slice(0, count).map(({ m, share }) => (
             <div key={m.idModel} className="rounded-xl border border-border p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -342,19 +400,24 @@ export default function ModelPanel({ spot, unit }: { spot: SpotPayload; unit: Wi
                       Ø {unit === "ms" ? (m.mae * 0.514444).toFixed(1) + " m/s" : Math.round(m.mae) + " kn"}
                     </span>
                   )}
-                  <span className="text-muted" title="Anteil am eigenen Konsens (aus der Güte)">
-                    {(m.weight * 100).toFixed(0)} %
+                  <span className="text-muted" title="Anteil am Konsens in den Stunden des gezeigten Zeitraums">
+                    {share > 0 ? `${(share * 100).toFixed(0)} %` : "nicht im Zeitraum"}
                   </span>
                 </div>
               </div>
-              {/* Gewichts-Balken */}
+              {/* Anteils-Balken (voll = ein Drittel des Zeitraums) */}
               <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[color:var(--color-bg-2)]">
                 <div
                   className="h-full rounded-full"
-                  style={{ width: `${Math.min(100, m.weight * 100 * 3)}%`, background: CAT_COLOR[m.category] }}
+                  style={{ width: `${Math.min(100, share * 100 * 3)}%`, background: CAT_COLOR[m.category] }}
                 />
               </div>
-              <p className="mt-1.5 text-xs text-muted">{m.note}</p>
+              <p className="mt-1.5 text-xs text-muted">
+                {m.note}
+                {m.coverEnd != null && (
+                  <span className="text-faint"> · reicht bis {reachFmt.format(new Date(m.coverEnd * 1000))}</span>
+                )}
+              </p>
             </div>
           ))}
         </div>

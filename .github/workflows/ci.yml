@@ -58,4 +58,42 @@ jobs:
           PYTHON: python
 
       - name: Python-Jobs kompilieren
-        run: python -m py_compile scripts/ingest_job.py scripts/skill_job.py scripts/app_lifecycle.py
+        run: python -m py_compile scripts/ingest_job.py scripts/skill_job.py
+
+  # Beide Databricks-Jobs gegen ein echtes Postgres (17, wie Lakebase): Erfassung ohne Netz
+  # (Abrufe ersetzt) und Lernen auf synthetischen Läufen mit bekanntem Fehler.
+  jobs-e2e:
+    name: Jobs gegen Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: windguru
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Abhängigkeiten
+        run: |
+          npm ci
+          python -m pip install --quiet numpy pg8000 requests
+
+      - name: Erfassung + Lernen End-to-End
+        run: python tests/jobs/e2e_test.py
+        env:
+          TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/windguru

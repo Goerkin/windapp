@@ -47,9 +47,9 @@ export default function VerificationPanel({ spot, unit }: { spot: SpotPayload; u
   return (
     <div>
       <div className="mb-1 text-xs text-muted">
-        Wie gut traf der Konsens rückblickend den gemessenen Wind? Aktives Verfahren, für jeden
-        Prognosezeitpunkt nur mit den Messungen davor gelernt (ehrlich, ohne Blick in die Zukunft),
-        letzte {v.windowDays} Tage.
+        Wie gut traf der Konsens rückblickend den gemessenen Wind? Für jeden Prognosezeitpunkt nur
+        mit den Messungen davor gelernt — und mit dem Verfahren, das zu diesem Zeitpunkt gewählt
+        war (ehrlich, ohne Blick in die Zukunft), letzte {v.windowDays} Tage.
       </div>
       <p className="mb-3 text-[11px] text-faint">
         „Treffer" = Prognose lag innerhalb ±{v.hitToleranceKn} kn am gemessenen Stundenmittel.
